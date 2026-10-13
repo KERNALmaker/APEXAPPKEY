@@ -55,9 +55,6 @@ def verify_token(token):
         return None
 
 
-# ═══════════════════════════════════════════════════
-# USER CLASS
-# ═══════════════════════════════════════════════════
 class AdminUser(UserMixin):
     def __init__(self, u):
         self.id = u.id
@@ -81,7 +78,7 @@ def log(action, details=''):
 
 
 # ═══════════════════════════════════════════════════
-# HEALTH CHECK (UptimeRobot)
+# HEALTH CHECK
 # ═══════════════════════════════════════════════════
 @app.route('/health', methods=['GET'])
 def health():
@@ -184,7 +181,7 @@ def dashboard():
 
 
 # ═══════════════════════════════════════════════════
-# LICENSES PAGE
+# LICENSES PAGE — WITH MULTI-DEVICE
 # ═══════════════════════════════════════════════════
 @app.route('/licenses')
 @login_required
@@ -207,6 +204,7 @@ def licenses():
 
     now = datetime.utcnow()
     for l in lics.items:
+        # Time remaining
         if l.duration == 'LIFETIME':
             l.remaining = "LIFETIME"
         elif l.expires_at:
@@ -225,6 +223,22 @@ def licenses():
                     l.remaining = f"{m}m"
         else:
             l.remaining = "PENDING"
+
+        # ═══════════════════════════════════════════════════
+        # PARSE DEVICE NAMES (JSON list)
+        # ═══════════════════════════════════════════════════
+        l.devices = []
+        if l.device_name:
+            try:
+                names = json.loads(l.device_name)
+                if isinstance(names, list):
+                    l.devices = names
+                else:
+                    l.devices = [l.device_name]
+            except:
+                l.devices = [l.device_name]
+
+        l.device_count = len(l.devices)
 
     return render_template('index.html', page='licenses', licenses=lics,
                           status=status, search=search, durations=list(DURATIONS.keys()))
@@ -293,12 +307,15 @@ def generate():
     count = min(int(d.get('count', 1)), 10000)
     dur = d.get('duration', '1D')
     sec = int(d.get('custom_seconds', 0)) if dur == 'CUSTOM' else DURATIONS.get(dur, 0)
+    max_dev = int(d.get('max_devices', 1))
 
     keys = []
     for _ in range(count):
         lic = License(
-            key=generate_key(), duration=dur, duration_seconds=sec,
-            max_devices=int(d.get('max_devices', 1)),
+            key=generate_key(),
+            duration=dur,
+            duration_seconds=sec,
+            max_devices=max_dev,
             ip_lock=d.get('ip_lock') or None,
             country_lock=d.get('country_lock') or None,
             app_version_lock=d.get('app_version_lock') or None,
@@ -308,7 +325,7 @@ def generate():
         keys.append(lic.key)
 
     db.session.commit()
-    log('bulk_generate', f'{count} keys ({dur})')
+    log('bulk_generate', f'{count} keys ({dur}) max_devices={max_dev}')
     return jsonify({'success': True, 'count': count, 'keys': keys})
 
 
@@ -325,6 +342,7 @@ def lic_action(action, lid):
     elif action == 'reset_hwid':
         lic.hwid = None
         lic.device_name = None
+        lic.device_hwids = None
         lic.activated_at = None
         lic.expires_at = None
         lic.status = 'pending'
@@ -386,7 +404,7 @@ def setup_2fa():
 
 
 # ═══════════════════════════════════════════════════
-# CLIENT API — VALIDATE
+# CLIENT API — VALIDATE (MULTI-DEVICE)
 # ═══════════════════════════════════════════════════
 @app.route('/api/validate', methods=['POST'])
 def api_validate():
@@ -425,15 +443,54 @@ def api_validate():
     if lic.ip_lock and lic.ip_lock != request.remote_addr:
         return jsonify({'data': encrypt_response({'valid': False, 'reason': 'IP_LOCKED'})})
 
-    if lic.hwid and lic.hwid != hwid and lic.max_devices <= 1:
-        return jsonify({'data': encrypt_response({'valid': False, 'reason': 'HWID_MISMATCH'})})
+    # ═══════════════════════════════════════════════════
+    # MULTI-DEVICE LOGIC
+    # ═══════════════════════════════════════════════════
+    device_hwids = []
+    if lic.device_hwids:
+        try:
+            device_hwids = json.loads(lic.device_hwids)
+        except:
+            device_hwids = []
 
-    if not lic.hwid:
-        lic.hwid = hwid
-        lic.device_name = dev
-        lic.activated_at = datetime.utcnow()
-        lic.expires_at = datetime.utcnow() + timedelta(seconds=lic.duration_seconds)
-        lic.status = 'active'
+    device_names = []
+    if lic.device_name:
+        try:
+            device_names = json.loads(lic.device_name)
+            if not isinstance(device_names, list):
+                device_names = [lic.device_name] if lic.device_name else []
+        except:
+            device_names = [lic.device_name] if lic.device_name else []
+
+    # Check if HWID already registered
+    if hwid in device_hwids:
+        # Existing device — allow
+        pass
+    else:
+        # New device — check limit
+        if len(device_hwids) >= lic.max_devices:
+            return jsonify({'data': encrypt_response({
+                'valid': False,
+                'reason': 'MAX_DEVICES',
+                'message': f'Max {lic.max_devices} device(s) allowed. Contact admin.'
+            })})
+
+        # Add new device
+        device_hwids.append(hwid)
+        device_names.append(dev if dev else "Unknown Device")
+
+        lic.device_hwids = json.dumps(device_hwids)
+        lic.device_name = json.dumps(device_names)
+
+        # First activation
+        if not lic.activated_at:
+            lic.activated_at = datetime.utcnow()
+            lic.expires_at = datetime.utcnow() + timedelta(seconds=lic.duration_seconds)
+            lic.status = 'active'
+
+        # Main hwid (first device)
+        if not lic.hwid:
+            lic.hwid = hwid
 
     lic.last_heartbeat = datetime.utcnow()
     db.session.add(Heartbeat(license_key=key, hwid=hwid, ip_address=request.remote_addr))
@@ -446,7 +503,9 @@ def api_validate():
         'token': token,
         'status': lic.status,
         'expires_at': lic.expires_at.strftime('%Y-%m-%dT%H:%M:%S') if lic.expires_at else None,
-        'time_remaining': time_remaining(lic)
+        'time_remaining': time_remaining(lic),
+        'max_devices': lic.max_devices,
+        'registered_devices': len(device_hwids)
     })})
 
 
@@ -476,6 +535,19 @@ def api_heartbeat():
     if not lic or lic.status != 'active' or is_expired(lic):
         return jsonify({'data': encrypt_response({'valid': False, 'reason': 'EXPIRED'})})
 
+    # Verify device is still registered
+    device_hwids = []
+    if lic.device_hwids:
+        try:
+            device_hwids = json.loads(lic.device_hwids)
+        except:
+            device_hwids = []
+
+    if hwid not in device_hwids:
+        return jsonify({'data': encrypt_response({
+            'valid': False, 'reason': 'DEVICE_REMOVED'
+        })})
+
     lic.last_heartbeat = datetime.utcnow()
     db.session.commit()
 
@@ -486,7 +558,7 @@ def api_heartbeat():
 
 
 # ═══════════════════════════════════════════════════
-# INIT DB (Runs on import - for Gunicorn)
+# INIT DB
 # ═══════════════════════════════════════════════════
 with app.app_context():
     try:
