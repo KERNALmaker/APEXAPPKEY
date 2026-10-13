@@ -7,9 +7,9 @@ import base64
 
 db = SQLAlchemy()
 
-# ============================================
+# ═══════════════════════════════════════════════════
 # CONFIG
-# ============================================
+# ═══════════════════════════════════════════════════
 AES_KEY = b'Yg&tc%DEuh6%Zc^8'
 AES_IV  = b'6oyZDr22E3ychjM%'
 API_SECRET = 'apex_api_secret_2026'
@@ -22,9 +22,9 @@ DURATIONS = {
 }
 
 
-# ============================================
+# ═══════════════════════════════════════════════════
 # MODELS
-# ============================================
+# ═══════════════════════════════════════════════════
 class License(db.Model):
     __tablename__ = 'licenses'
     id = db.Column(db.Integer, primary_key=True)
@@ -41,23 +41,17 @@ class License(db.Model):
     activated_at = db.Column(db.DateTime, nullable=True)
     expires_at = db.Column(db.DateTime, nullable=True)
     last_heartbeat = db.Column(db.DateTime, nullable=True)
-    device_name = db.Column(db.String(128), nullable=True)
+    device_name = db.Column(db.Text, nullable=True)
     device_hwids = db.Column(db.Text, nullable=True)
     notes = db.Column(db.Text, nullable=True)
     created_by = db.Column(db.String(64), nullable=True)
 
     def time_remaining(self):
-        """Return formatted time remaining"""
-        if self.duration == 'LIFETIME':
-            return "LIFETIME"
-        if not self.expires_at:
-            return "PENDING"
+        if self.duration == 'LIFETIME': return "LIFETIME"
+        if not self.expires_at: return "PENDING"
         diff = (self.expires_at - datetime.utcnow()).total_seconds()
-        if diff <= 0:
-            return "EXPIRED"
-        d = int(diff // 86400)
-        h = int((diff % 86400) // 3600)
-        m = int((diff % 3600) // 60)
+        if diff <= 0: return "EXPIRED"
+        d = int(diff // 86400); h = int((diff % 86400) // 3600); m = int((diff % 3600) // 60)
         if d > 0: return f"{d}d {h}h {m}m"
         if h > 0: return f"{h}h {m}m"
         return f"{m}m"
@@ -124,9 +118,9 @@ class Setting(db.Model):
         db.session.commit()
 
 
-# ============================================
+# ═══════════════════════════════════════════════════
 # HELPERS
-# ============================================
+# ═══════════════════════════════════════════════════
 def generate_key():
     abc = string.ascii_uppercase + string.digits
     parts = [''.join(secrets.choice(abc) for _ in range(4)) for _ in range(4)]
@@ -151,18 +145,3 @@ def generate_hwid(android_id='', serial='', fingerprint='', cpu_info=''):
 def verify_hwid(stored, client):
     if not stored or not client: return False
     return hmac.compare_digest(stored, client)
-
-
-def encrypt_response(data):
-    cipher = AES.new(AES_KEY, AES.MODE_CBC, AES_IV)
-    padded = pad(json.dumps(data).encode(), AES.block_size)
-    return base64.b64encode(cipher.encrypt(padded)).decode()
-
-
-def decrypt_request(encrypted_b64):
-    try:
-        cipher = AES.new(AES_KEY, AES.MODE_CBC, AES_IV)
-        decrypted = cipher.decrypt(base64.b64decode(encrypted_b64))
-        return json.loads(unpad(decrypted, AES.block_size).decode())
-    except:
-        return None
