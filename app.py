@@ -39,15 +39,6 @@ def encrypt_response(data):
     return base64.b64encode(cipher.encrypt(padded)).decode()
 
 
-def decrypt_request(enc_b64):
-    try:
-        cipher = AES.new(AES_KEY, AES.MODE_CBC, AES_IV)
-        decrypted = cipher.decrypt(base64.b64decode(enc_b64))
-        return json.loads(unpad(decrypted, AES.block_size).decode())
-    except:
-        return None
-
-
 def generate_token(key, hwid):
     return jwt.encode({
         'key': key,
@@ -90,13 +81,34 @@ def log(action, details=''):
 
 
 # ═══════════════════════════════════════════════════
+# HEALTH CHECK (UptimeRobot)
+# ═══════════════════════════════════════════════════
+@app.route('/health', methods=['GET'])
+def health():
+    return jsonify({
+        'status': 'ok',
+        'service': 'APEX License Server',
+        'time': datetime.utcnow().isoformat()
+    }), 200
+
+
+@app.route('/ping', methods=['GET'])
+def ping():
+    return 'pong', 200
+
+
+# ═══════════════════════════════════════════════════
 # MAINTENANCE CHECK
 # ═══════════════════════════════════════════════════
 @app.before_request
 def check_maintenance():
-    if request.endpoint in ['maintenance', 'static', 'login', 'api_validate', 'api_heartbeat']:
+    if request.endpoint in ['maintenance', 'static', 'login',
+                            'api_validate', 'api_heartbeat',
+                            'health', 'ping']:
         return
     if request.path.startswith('/static/'):
+        return
+    if request.path in ['/health', '/ping']:
         return
     if Setting.get('maintenance_mode', 'off') == 'on':
         if not (current_user.is_authenticated and current_user.is_admin):
@@ -374,7 +386,7 @@ def setup_2fa():
 
 
 # ═══════════════════════════════════════════════════
-# CLIENT API — VALIDATE (HMAC REMOVED)
+# CLIENT API — VALIDATE
 # ═══════════════════════════════════════════════════
 @app.route('/api/validate', methods=['POST'])
 def api_validate():
@@ -382,7 +394,6 @@ def api_validate():
     if not d:
         return jsonify({'error': 'No data'}), 400
 
-    # ─── Secret Check ───
     if d.get('secret') != API_SECRET:
         return jsonify({'error': 'Invalid secret'}), 403
 
@@ -393,13 +404,11 @@ def api_validate():
     if not key or not hwid:
         return jsonify({'error': 'Missing'}), 400
 
-    # ─── Maintenance ───
     if Setting.get('maintenance_mode', 'off') == 'on':
         return jsonify({'data': encrypt_response({
             'valid': False, 'reason': 'MAINTENANCE'
         })})
 
-    # ─── License Check ───
     lic = License.query.filter_by(key=key).first()
     if not lic:
         return jsonify({'data': encrypt_response({'valid': False, 'reason': 'INVALID_KEY'})})
@@ -419,7 +428,6 @@ def api_validate():
     if lic.hwid and lic.hwid != hwid and lic.max_devices <= 1:
         return jsonify({'data': encrypt_response({'valid': False, 'reason': 'HWID_MISMATCH'})})
 
-    # ─── First Activation ───
     if not lic.hwid:
         lic.hwid = hwid
         lic.device_name = dev
@@ -431,10 +439,8 @@ def api_validate():
     db.session.add(Heartbeat(license_key=key, hwid=hwid, ip_address=request.remote_addr))
     db.session.commit()
 
-    # ─── Token ───
     token = generate_token(key, hwid)
 
-    # ─── Encrypted Response ───
     return jsonify({'data': encrypt_response({
         'valid': True,
         'token': token,
@@ -445,7 +451,7 @@ def api_validate():
 
 
 # ═══════════════════════════════════════════════════
-# CLIENT API — HEARTBEAT (HMAC REMOVED)
+# CLIENT API — HEARTBEAT
 # ═══════════════════════════════════════════════════
 @app.route('/api/heartbeat', methods=['POST'])
 def api_heartbeat():
@@ -480,10 +486,10 @@ def api_heartbeat():
 
 
 # ═══════════════════════════════════════════════════
-# INIT
+# INIT DB (Runs on import - for Gunicorn)
 # ═══════════════════════════════════════════════════
-def init_db():
-    with app.app_context():
+with app.app_context():
+    try:
         db.create_all()
         if not User.query.filter_by(username='admin').first():
             db.session.add(User(
@@ -496,8 +502,10 @@ def init_db():
         Setting.set('maintenance_mode', Setting.get('maintenance_mode', 'off'))
         Setting.set('maintenance_message', Setting.get('maintenance_message',
                     'System under maintenance. Please try again later.'))
+        print("[+] Database initialized")
+    except Exception as e:
+        print(f"[!] DB init error: {e}")
 
 
 if __name__ == '__main__':
-    init_db()
     app.run(host='0.0.0.0', port=5000)
