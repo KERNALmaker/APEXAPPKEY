@@ -13,7 +13,7 @@ body{font-family:-apple-system,sans-serif;background:#0a0a0a;color:#fff;display:
 .side a:hover,.side a.on{background:#0a0a0a;color:#00ff88;border-left-color:#00ff88}
 .main{margin-left:220px;padding:30px;width:calc(100% - 220px);min-height:100vh}
 h1{color:#00ff88;margin-bottom:24px}
-.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-bottom:30px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:30px}
 .card{background:#1a1a1a;padding:18px;border-radius:10px;border-left:4px solid #00ff88}
 .card .l{color:#888;font-size:11px;text-transform:uppercase}
 .card .v{font-size:26px;font-weight:bold;color:#00ff88;margin-top:6px}
@@ -53,7 +53,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#00ff88}
 .device{color:#00ff88;font-size:11px;font-weight:bold}
 .device-list{font-size:10px;color:#aaa;margin-top:4px;padding-left:8px;border-left:2px solid #333}
 .no-device{color:#666;font-size:11px;font-style:italic}
-.badge-dev{background:#003344;color:#00ddff;padding:2px 6px;border-radius:4px;font-size:10px;font-weight:bold}
+code{font-family:monospace;color:#00ff88;font-size:11px;word-break:break-all}
 </style>
 </head>
 <body>
@@ -86,6 +86,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#00ff88}
   <h2>APEX</h2>
   <a href="{{ url_for('dashboard') }}" class="{% if page=='dashboard' %}on{% endif %}">📊 Dashboard</a>
   <a href="{{ url_for('licenses') }}" class="{% if page=='licenses' %}on{% endif %}">🔑 Licenses</a>
+  <a href="{{ url_for('apps_page') }}" class="{% if page=='apps' %}on{% endif %}">📱 Apps</a>
   <a href="{{ url_for('users') }}" class="{% if page=='users' %}on{% endif %}">👥 Users</a>
   <a href="{{ url_for('logs_page') }}" class="{% if page=='logs' %}on{% endif %}">📜 Logs</a>
   <a href="{{ url_for('settings') }}" class="{% if page=='settings' %}on{% endif %}">⚙️ Settings</a>
@@ -104,10 +105,11 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#00ff88}
     <div class="card o"><div class="l">Frozen</div><div class="v">{{ stats.frozen }}</div></div>
     <div class="card r"><div class="l">Revoked</div><div class="v">{{ stats.revoked }}</div></div>
     <div class="card b"><div class="l">Pending</div><div class="v">{{ stats.pending }}</div></div>
+    <div class="card b"><div class="l">Apps</div><div class="v">{{ stats.apps }}</div></div>
   </div>
   <div class="box"><h3>Recent Activity</h3>
-  <table><tr><th>Time</th><th>Action</th><th>IP</th></tr>
-  {% for l in logs %}<tr><td>{{ l.created_at.strftime('%m-%d %H:%M') }}</td><td>{{ l.action }}</td><td>{{ l.ip_address or '-' }}</td></tr>{% endfor %}
+  <table><tr><th>Time</th><th>Action</th><th>Details</th><th>IP</th></tr>
+  {% for l in logs %}<tr><td>{{ l.created_at.strftime('%m-%d %H:%M') }}</td><td>{{ l.action }}</td><td>{{ l.details or '-' }}</td><td>{{ l.ip_address or '-' }}</td></tr>{% endfor %}
   </table></div>
 
 {% elif page == 'licenses' %}
@@ -142,19 +144,14 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#00ff88}
   <table>
     <thead>
       <tr>
-        <th>KEY</th>
-        <th>STATUS</th>
-        <th>DURATION</th>
-        <th>⏱️ REMAINING</th>
-        <th>DEVICES</th>
-        <th>HWID</th>
-        <th>ACTIONS</th>
+        <th>KEY</th><th>STATUS</th><th>DURATION</th>
+        <th>⏱️ REMAINING</th><th>DEVICES</th><th>HWID</th><th>ACTIONS</th>
       </tr>
     </thead>
     <tbody>
       {% for l in licenses.items %}
       <tr>
-        <td><code style="color:#00ff88;font-size:11px">{{ l.key }}</code></td>
+        <td><code>{{ l.key }}</code></td>
         <td><span class="bg {{ l.status }}">{{ l.status }}</span></td>
         <td>{{ l.duration }}</td>
         <td>
@@ -172,20 +169,62 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#00ff88}
           {% if l.device_count > 0 %}
             <span class="device">📱 {{ l.device_count }}/{{ l.max_devices }}</span>
             <div class="device-list">
-              {% for dev in l.devices %}
-                <div>• {{ dev }}</div>
-              {% endfor %}
+              {% for dev in l.devices %}<div>• {{ dev }}</div>{% endfor %}
             </div>
           {% else %}
             <span class="no-device">— No device —</span>
           {% endif %}
         </td>
-        <td><code style="font-size:10px">{{ (l.hwid or '-')[:12] }}</code></td>
+        <td><code>{{ (l.hwid or '-')[:12] }}</code></td>
         <td>
           <button class="btn r s" onclick="act({{ l.id }},'revoke')">REVOKE</button>
           <button class="btn o s" onclick="act({{ l.id }},'reset_hwid')">RESET</button>
           <button class="btn b s" onclick="act({{ l.id }},'freeze')">FREEZE</button>
           <button class="btn r s" onclick="act({{ l.id }},'delete')">DELETE</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+{% elif page == 'apps' %}
+  <h1>📱 App Integrity</h1>
+  <div class="box">
+    <h3>Register New App / Update Baseline</h3>
+    <p style="color:#888;font-size:12px;margin-bottom:10px">
+      Get values from build: <code>stat -c%s app.apk</code>, <code>sha256sum app.apk</code>,
+      <code>apksigner verify --print-certs app.apk</code>
+    </p>
+    <form id="appForm" class="grid-form">
+      <input type="text" name="package" placeholder="Package (com.apex.client)" required>
+      <input type="text" name="version_name" placeholder="Version Name (1.0)">
+      <input type="number" name="version_code" placeholder="Version Code (1)" value="1">
+      <input type="number" name="min_version_code" placeholder="Min Version Code" value="0">
+      <input type="number" name="apk_size" placeholder="APK Size (bytes)" required>
+      <input type="text" name="apk_sha256" placeholder="APK SHA-256" required>
+      <input type="text" name="sig_sha256" placeholder="Signature SHA-256" required>
+      <button type="submit" class="btn">REGISTER</button>
+    </form>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>PACKAGE</th><th>VERSION</th><th>SIZE</th>
+        <th>APK SHA-256</th><th>SIG SHA-256</th><th>ACTIVE</th><th>ACTIONS</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for a in apps %}
+      <tr>
+        <td><code>{{ a.package }}</code></td>
+        <td>{{ a.version_name }} ({{ a.version_code }})</td>
+        <td>{{ a.apk_size }}</td>
+        <td><code title="{{ a.apk_sha256 }}">{{ a.apk_sha256[:16] }}...</code></td>
+        <td><code title="{{ a.sig_sha256 }}">{{ a.sig_sha256[:16] }}...</code></td>
+        <td>{{ '✅' if a.active else '❌' }}</td>
+        <td>
+          <button class="btn o s" onclick="appAct({{ a.id }},'toggle')">TOGGLE</button>
+          <button class="btn r s" onclick="appAct({{ a.id }},'delete')">DELETE</button>
         </td>
       </tr>
       {% endfor %}
@@ -226,7 +265,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#00ff88}
   <div class="box" style="text-align:center">
     <p style="margin-bottom:14px">Scan QR with Google Authenticator:</p>
     <img src="data:image/png;base64,{{ qr }}" style="border-radius:10px">
-    <p style="margin:14px 0;color:#888">Or enter: <code style="color:#00ff88">{{ secret }}</code></p>
+    <p style="margin:14px 0;color:#888">Or enter: <code>{{ secret }}</code></p>
     <form method="POST" style="max-width:300px;margin:20px auto">
       <input type="text" name="totp_code" placeholder="6-digit code" maxlength="6" required>
       <button class="btn" style="width:100%;margin-top:10px">VERIFY</button>
@@ -239,6 +278,12 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#00ff88}
 async function act(id, action) {
   if (!confirm(action + '?')) return;
   const r = await fetch(`/api/license/${action}/${id}`, {method:'POST'});
+  if ((await r.json()).success) location.reload();
+  else alert('Failed');
+}
+async function appAct(id, action) {
+  if (!confirm(action + '?')) return;
+  const r = await fetch(`/api/apps/${action}/${id}`, {method:'POST'});
   if ((await r.json()).success) location.reload();
   else alert('Failed');
 }
@@ -260,6 +305,16 @@ document.getElementById('genForm')?.addEventListener('submit', async e => {
     alert(`✅ Generated ${j.count} keys!\n\n` + j.keys.slice(0,5).join('\n'));
     location.reload();
   } else alert('Failed');
+});
+document.getElementById('appForm')?.addEventListener('submit', async e => {
+  e.preventDefault();
+  const data = Object.fromEntries(new FormData(e.target));
+  const r = await fetch('/api/apps/register', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)
+  });
+  const j = await r.json();
+  if (j.success) { alert('✅ App registered'); location.reload(); }
+  else alert('Failed: ' + (j.error || 'unknown'));
 });
 </script>
 
