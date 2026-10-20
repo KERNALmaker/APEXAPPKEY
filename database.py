@@ -118,6 +118,21 @@ class Setting(db.Model):
         db.session.commit()
 
 
+class AppIntegrity(db.Model):
+    __tablename__ = 'app_integrity'
+    id = db.Column(db.Integer, primary_key=True)
+    package = db.Column(db.String(128), unique=True, nullable=False, index=True)
+    version_name = db.Column(db.String(64), nullable=True)
+    version_code = db.Column(db.Integer, default=0)
+    apk_size = db.Column(db.BigInteger, nullable=False)
+    apk_sha256 = db.Column(db.String(128), nullable=False)
+    sig_sha256 = db.Column(db.String(128), nullable=False)
+    min_version_code = db.Column(db.Integer, default=0)
+    active = db.Column(db.Boolean, default=True)
+    registered_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
 # ═══════════════════════════════════════════════════
 # HELPERS
 # ═══════════════════════════════════════════════════
