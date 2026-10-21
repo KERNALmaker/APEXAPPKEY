@@ -9,7 +9,7 @@ from Crypto.Cipher import AES
 from Crypto.Util.Padding import pad, unpad
 
 from database import (db, License, User, ActivityLog, Heartbeat, Setting,
-                      AppIntegrity, API_SECRET, DURATIONS, generate_key,
+                      AppIntegrity, AppConfig, API_SECRET, DURATIONS, generate_key,
                       is_expired, time_remaining)
 
 # ═══════════════════════════════════════════════════
@@ -81,7 +81,7 @@ def log(action, details=''):
 
 
 # ═══════════════════════════════════════════════════
-# HEALTH
+# HEALTH & MAINTENANCE
 # ═══════════════════════════════════════════════════
 @app.route('/health', methods=['GET'])
 def health():
@@ -98,7 +98,7 @@ def ping():
 def check_maintenance():
     if request.endpoint in ['maintenance', 'static', 'login',
                             'api_validate', 'api_heartbeat',
-                            'api_integrity', 'api_button_action', 'health', 'ping']:
+                            'api_integrity', 'api_button_action', 'api_app_config', 'health', 'ping']:
         return
     if request.path.startswith('/static/'):
         return
@@ -257,7 +257,7 @@ def register_app():
     app_db.version_code = int(d.get('version_code', app_db.version_code or 0))
     app_db.apk_size = int(d['apk_size'])
     app_db.apk_sha256 = d['apk_sha256']
-    app_db.sig_sha256 = d.get('sig_sha256', '') # Optional
+    app_db.sig_sha256 = d.get('sig_sha256', '')
     app_db.min_version_code = int(d.get('min_version_code', 0))
     app_db.active = True
     db.session.commit()
@@ -301,10 +301,24 @@ def logs_page():
 def settings():
     if request.method == 'POST':
         Setting.set('maintenance_message', request.form.get('maintenance_message', ''))
+        
+        # 🔥 UI CONFIG UPDATE
+        config = AppConfig.get_config()
+        config.app_name = request.form.get('app_name', config.app_name)
+        config.telegram_channel = request.form.get('telegram_channel', config.telegram_channel)
+        config.telegram_developer = request.form.get('telegram_developer', config.telegram_developer)
+        db.session.commit()
+        
         return redirect(url_for('settings'))
+        
+    config = AppConfig.get_config()
     return render_template('index.html', page='settings',
         maintenance_mode=Setting.get('maintenance_mode', 'off'),
-        maintenance_message=Setting.get('maintenance_message', ''))
+        maintenance_message=Setting.get('maintenance_message', ''),
+        app_name=config.app_name,
+        telegram_channel=config.telegram_channel,
+        telegram_developer=config.telegram_developer
+    )
 
 
 @app.route('/api/maintenance/toggle', methods=['POST'])
@@ -424,7 +438,7 @@ def setup_2fa():
 
 
 # ═══════════════════════════════════════════════════
-# CLIENT API — INTEGRITY (SIZE & HASH ONLY)
+# CLIENT API — INTEGRITY (SIZE & HASH)
 # ═══════════════════════════════════════════════════
 @app.route('/api/integrity', methods=['POST'])
 def api_integrity():
@@ -453,25 +467,53 @@ def api_integrity():
             'valid': False, 'reason': 'BAD_PAYLOAD'
         })})
 
-    # ✅ SIZE CHECK
     if client_size != record.apk_size:
         log('integrity_size_fail', f'{pkg} expected={record.apk_size} got={client_size}')
         return jsonify({'data': encrypt_response({
             'valid': False, 'reason': 'SIZE_MISMATCH'
         })})
 
-    # ✅ APK HASH CHECK
     if client_apk_sha != record.apk_sha256.lower():
         log('integrity_apk_fail', f'{pkg}')
         return jsonify({'data': encrypt_response({
             'valid': False, 'reason': 'APK_HASH_MISMATCH'
         })})
 
-    # ❌ SIGNATURE CHECK HATA DIYA GAYA HAI
-
     return jsonify({'data': encrypt_response({
         'valid': True, 'reason': 'OK',
         'checked_at': int(datetime.utcnow().timestamp())
+    })})
+
+
+# ═══════════════════════════════════════════════════
+# CLIENT API — DYNAMIC UI FETCH
+# ═══════════════════════════════════════════════════
+@app.route('/api/app_config', methods=['POST'])
+def api_app_config():
+    d = request.get_json()
+    if not d or d.get('secret') != API_SECRET:
+        return jsonify({'error': 'Invalid'}), 403
+
+    # 🔥 APK INTEGRITY CHECK (Manifest Lock)
+    pkg = (d.get('package') or '').strip()
+    if pkg:
+        record = AppIntegrity.query.filter_by(package=pkg, active=True).first()
+        if record:
+            try:
+                if int(d.get('apk_size', -1)) != record.apk_size:
+                    return jsonify({'data': encrypt_response({'valid': False, 'reason': 'APK_MODIFIED'})})
+                if (d.get('apk_sha256') or '').strip().lower() != record.apk_sha256.lower():
+                    return jsonify({'data': encrypt_response({'valid': False, 'reason': 'APK_MODIFIED'})})
+            except Exception:
+                return jsonify({'data': encrypt_response({'valid': False, 'reason': 'BAD_PAYLOAD'})})
+
+    config = AppConfig.get_config()
+    
+    return jsonify({'data': encrypt_response({
+        'valid': True,
+        'app_name': config.app_name,
+        'channel_link': config.telegram_channel,
+        'dev_link': config.telegram_developer
     })})
 
 
@@ -493,17 +535,11 @@ def api_validate():
         if record:
             try:
                 if int(d.get('apk_size', -1)) != record.apk_size:
-                    return jsonify({'data': encrypt_response({
-                        'valid': False, 'reason': 'APK_MODIFIED'
-                    })})
+                    return jsonify({'data': encrypt_response({'valid': False, 'reason': 'APK_MODIFIED'})})
                 if (d.get('apk_sha256') or '').strip().lower() != record.apk_sha256.lower():
-                    return jsonify({'data': encrypt_response({
-                        'valid': False, 'reason': 'APK_MODIFIED'
-                    })})
+                    return jsonify({'data': encrypt_response({'valid': False, 'reason': 'APK_MODIFIED'})})
             except Exception:
-                return jsonify({'data': encrypt_response({
-                    'valid': False, 'reason': 'BAD_PAYLOAD'
-                })})
+                return jsonify({'data': encrypt_response({'valid': False, 'reason': 'BAD_PAYLOAD'})})
 
     key = d.get('key', '').strip()
     hwid = d.get('hwid', '').strip()
@@ -513,9 +549,7 @@ def api_validate():
         return jsonify({'error': 'Missing'}), 400
 
     if Setting.get('maintenance_mode', 'off') == 'on':
-        return jsonify({'data': encrypt_response({
-            'valid': False, 'reason': 'MAINTENANCE'
-        })})
+        return jsonify({'data': encrypt_response({'valid': False, 'reason': 'MAINTENANCE'})})
 
     lic = License.query.filter_by(key=key).first()
     if not lic:
@@ -535,33 +569,27 @@ def api_validate():
 
     device_hwids = []
     if lic.device_hwids:
-        try:
-            device_hwids = json.loads(lic.device_hwids)
-        except Exception:
-            device_hwids = []
+        try: device_hwids = json.loads(lic.device_hwids)
+        except Exception: device_hwids = []
 
     device_names = []
     if lic.device_name:
         try:
             device_names = json.loads(lic.device_name)
-            if not isinstance(device_names, list):
-                device_names = [lic.device_name] if lic.device_name else []
-        except Exception:
-            device_names = [lic.device_name] if lic.device_name else []
+            if not isinstance(device_names, list): device_names = [lic.device_name] if lic.device_name else []
+        except Exception: device_names = [lic.device_name] if lic.device_name else []
 
     if hwid in device_hwids:
         pass
     else:
         if len(device_hwids) >= lic.max_devices:
             return jsonify({'data': encrypt_response({
-                'valid': False,
-                'reason': 'MAX_DEVICES',
+                'valid': False, 'reason': 'MAX_DEVICES',
                 'message': f'Max {lic.max_devices} device(s) allowed.'
             })})
 
         device_hwids.append(hwid)
         device_names.append(dev if dev else "Unknown Device")
-
         lic.device_hwids = json.dumps(device_hwids)
         lic.device_name = json.dumps(device_names)
 
@@ -580,9 +608,7 @@ def api_validate():
     token = generate_token(key, hwid)
 
     return jsonify({'data': encrypt_response({
-        'valid': True,
-        'token': token,
-        'status': lic.status,
+        'valid': True, 'token': token, 'status': lic.status,
         'expires_at': lic.expires_at.strftime('%Y-%m-%dT%H:%M:%S') if lic.expires_at else None,
         'time_remaining': time_remaining(lic),
         'max_devices': lic.max_devices,
@@ -591,68 +617,34 @@ def api_validate():
 
 
 # ═══════════════════════════════════════════════════
-# CLIENT API — HEARTBEAT
+# CLIENT API — HEARTBEAT & BUTTON
 # ═══════════════════════════════════════════════════
 @app.route('/api/heartbeat', methods=['POST'])
 def api_heartbeat():
     d = request.get_json()
-    if not d:
-        return jsonify({'error': 'No data'}), 400
+    if not d or d.get('secret') != API_SECRET: return jsonify({'error': 'Invalid'}), 403
 
-    if d.get('secret') != API_SECRET:
-        return jsonify({'error': 'Invalid'}), 403
-
-    token = d.get('token', '')
-    hwid = d.get('hwid', '')
-
-    payload = verify_token(token)
-    if not payload:
-        return jsonify({'data': encrypt_response({'valid': False, 'reason': 'TOKEN_EXPIRED'})})
-
-    if payload.get('hwid') != hwid:
-        return jsonify({'data': encrypt_response({'valid': False, 'reason': 'HWID_MISMATCH'})})
+    payload = verify_token(d.get('token', ''))
+    if not payload or payload.get('hwid') != d.get('hwid', ''): return jsonify({'data': encrypt_response({'valid': False, 'reason': 'TOKEN_EXPIRED'})})
 
     lic = License.query.filter_by(key=payload.get('key')).first()
-    if not lic or lic.status != 'active' or is_expired(lic):
-        return jsonify({'data': encrypt_response({'valid': False, 'reason': 'EXPIRED'})})
-
-    device_hwids = []
-    if lic.device_hwids:
-        try:
-            device_hwids = json.loads(lic.device_hwids)
-        except Exception:
-            device_hwids = []
-
-    if hwid not in device_hwids:
-        return jsonify({'data': encrypt_response({
-            'valid': False, 'reason': 'DEVICE_REMOVED'
-        })})
+    if not lic or lic.status != 'active' or is_expired(lic): return jsonify({'data': encrypt_response({'valid': False, 'reason': 'EXPIRED'})})
 
     lic.last_heartbeat = datetime.utcnow()
     db.session.commit()
-
-    return jsonify({'data': encrypt_response({
-        'valid': True,
-        'time_remaining': time_remaining(lic)
-    })})
+    return jsonify({'data': encrypt_response({'valid': True, 'time_remaining': time_remaining(lic)})})
 
 
-# ═══════════════════════════════════════════════════
-# 🔥 SECURE BUTTON API
-# ═══════════════════════════════════════════════════
 @app.route('/api/button_action', methods=['POST'])
 def api_button_action():
     d = request.get_json()
-    if not d or d.get('secret') != API_SECRET:
-        return jsonify({'error': 'Invalid'}), 403
+    if not d or d.get('secret') != API_SECRET: return jsonify({'error': 'Invalid'}), 403
 
     payload = verify_token(d.get('token', ''))
-    if not payload or payload.get('hwid') != d.get('hwid', ''):
-        return jsonify({'data': encrypt_response({'valid': False, 'reason': 'TOKEN_EXPIRED'})})
+    if not payload or payload.get('hwid') != d.get('hwid', ''): return jsonify({'data': encrypt_response({'valid': False, 'reason': 'TOKEN_EXPIRED'})})
 
     lic = License.query.filter_by(key=payload.get('key')).first()
-    if not lic or lic.status != 'active' or is_expired(lic):
-        return jsonify({'data': encrypt_response({'valid': False, 'reason': 'EXPIRED'})})
+    if not lic or lic.status != 'active' or is_expired(lic): return jsonify({'data': encrypt_response({'valid': False, 'reason': 'EXPIRED'})})
 
     action = d.get('action', '')
     if action in ['inject', 'bypass']:
@@ -669,16 +661,10 @@ with app.app_context():
     try:
         db.create_all()
         if not User.query.filter_by(username='admin').first():
-            db.session.add(User(
-                username='admin',
-                password_hash=generate_password_hash('apex_admin_2026'),
-                is_admin=True
-            ))
+            db.session.add(User(username='admin', password_hash=generate_password_hash('apex_admin_2026'), is_admin=True))
             db.session.commit()
             print("[+] Admin: admin / apex_admin_2026")
-        Setting.set('maintenance_mode', Setting.get('maintenance_mode', 'off'))
-        Setting.set('maintenance_message', Setting.get('maintenance_message',
-                    'System under maintenance. Please try again later.'))
+        AppConfig.get_config() # Ensure default config exists
         print("[+] Database initialized")
     except Exception as e:
         print(f"[!] DB init error: {e}")
