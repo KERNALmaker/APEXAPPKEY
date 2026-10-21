@@ -308,4 +308,51 @@ def api_validate():
     if hwid in device_hwids: pass
     else:
         if len(device_hwids) >= lic.max_devices: return jsonify({'data': encrypt_response({'valid': False, 'reason': 'MAX_DEVICES', 'message': f'Max {lic.max_devices} device(s) allowed.'})})
-        device_hwids.append(hwid); device_names.append(dev if
+        device_hwids.append(hwid); device_names.append(dev if dev else "Unknown Device")
+        lic.device_hwids = json.dumps(device_hwids); lic.device_name = json.dumps(device_names)
+        if not lic.activated_at:
+            lic.activated_at = datetime.utcnow(); lic.expires_at = datetime.utcnow() + timedelta(seconds=lic.duration_seconds); lic.status = 'active'
+        if not lic.hwid: lic.hwid = hwid
+    lic.last_heartbeat = datetime.utcnow()
+    db.session.add(Heartbeat(license_key=key, hwid=hwid, ip_address=request.remote_addr)); db.session.commit()
+    token = generate_token(key, hwid)
+    return jsonify({'data': encrypt_response({'valid': True, 'token': token, 'status': lic.status, 'expires_at': lic.expires_at.strftime('%Y-%m-%dT%H:%M:%S') if lic.expires_at else None, 'time_remaining': time_remaining(lic), 'max_devices': lic.max_devices, 'registered_devices': len(device_hwids)})})
+
+@app.route('/api/heartbeat', methods=['POST'])
+def api_heartbeat():
+    d = request.get_json()
+    if not d or d.get('secret') != API_SECRET: return jsonify({'error': 'Invalid'}), 403
+    payload = verify_token(d.get('token', ''))
+    if not payload or payload.get('hwid') != d.get('hwid', ''): return jsonify({'data': encrypt_response({'valid': False, 'reason': 'TOKEN_EXPIRED'})})
+    lic = License.query.filter_by(key=payload.get('key')).first()
+    if not lic or lic.status != 'active' or is_expired(lic): return jsonify({'data': encrypt_response({'valid': False, 'reason': 'EXPIRED'})})
+    lic.last_heartbeat = datetime.utcnow(); db.session.commit()
+    return jsonify({'data': encrypt_response({'valid': True, 'time_remaining': time_remaining(lic)})})
+
+# ==========================================
+# 🔥 SECURE BUTTON API
+# ==========================================
+@app.route('/api/button_action', methods=['POST'])
+def api_button_action():
+    d = request.get_json()
+    if not d or d.get('secret') != API_SECRET: return jsonify({'error': 'Invalid'}), 403
+    payload = verify_token(d.get('token', ''))
+    if not payload or payload.get('hwid') != d.get('hwid', ''): return jsonify({'data': encrypt_response({'valid': False, 'reason': 'TOKEN_EXPIRED'})})
+    lic = License.query.filter_by(key=payload.get('key')).first()
+    if not lic or lic.status != 'active' or is_expired(lic): return jsonify({'data': encrypt_response({'valid': False, 'reason': 'EXPIRED'})})
+    action = d.get('action', '')
+    if action in ['inject', 'bypass']:
+        magic_sig = hmac.new(b"apex_super_secret_key_xyz", f"{lic.key}:{d.get('hwid')}:{action}".encode(), hashlib.sha256).hexdigest()
+        return jsonify({'data': encrypt_response({'valid': True, 'action': action.upper() + '_READY', 'sig': magic_sig[:16]})})
+    return jsonify({'data': encrypt_response({'valid': False, 'reason': 'UNKNOWN_ACTION'})})
+
+with app.app_context():
+    try:
+        db.create_all()
+        if not User.query.filter_by(username='admin').first():
+            db.session.add(User(username='admin', password_hash=generate_password_hash('apex_admin_2026'), is_admin=True)); db.session.commit()
+        Setting.set('maintenance_mode', Setting.get('maintenance_mode', 'off'))
+        Setting.set('maintenance_message', Setting.get('maintenance_message', 'System under maintenance.'))
+    except Exception as e: print(f"[!] DB init error: {e}")
+
+if __name__ == '__main__': app.run(host='0.0.0.0', port=5000)
