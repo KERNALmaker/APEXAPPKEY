@@ -54,6 +54,7 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#00ff88}
 .device-list{font-size:10px;color:#aaa;margin-top:4px;padding-left:8px;border-left:2px solid #333}
 .no-device{color:#666;font-size:11px;font-style:italic}
 code{font-family:monospace;color:#00ff88;font-size:11px;word-break:break-all}
+label{font-size:12px;color:#aaa;margin-top:8px;display:block}
 </style>
 </head>
 <body>
@@ -192,8 +193,7 @@ code{font-family:monospace;color:#00ff88;font-size:11px;word-break:break-all}
   <div class="box">
     <h3>Register New App / Update Baseline</h3>
     <p style="color:#888;font-size:12px;margin-bottom:10px">
-      Get values from build: <code>stat -c%s app.apk</code>, <code>sha256sum app.apk</code>,
-      <code>apksigner verify --print-certs app.apk</code>
+      Get values from build: <code>stat -c%s app.apk</code>, <code>sha256sum app.apk</code>
     </p>
     <form id="appForm" class="grid-form">
       <input type="text" name="package" placeholder="Package (com.apex.client)" required>
@@ -202,7 +202,7 @@ code{font-family:monospace;color:#00ff88;font-size:11px;word-break:break-all}
       <input type="number" name="min_version_code" placeholder="Min Version Code" value="0">
       <input type="number" name="apk_size" placeholder="APK Size (bytes)" required>
       <input type="text" name="apk_sha256" placeholder="APK SHA-256" required>
-      <input type="text" name="sig_sha256" placeholder="Signature SHA-256" required>
+      <input type="text" name="sig_sha256" placeholder="Signature SHA-256 (Optional)">
       <button type="submit" class="btn">REGISTER</button>
     </form>
   </div>
@@ -210,7 +210,7 @@ code{font-family:monospace;color:#00ff88;font-size:11px;word-break:break-all}
     <thead>
       <tr>
         <th>PACKAGE</th><th>VERSION</th><th>SIZE</th>
-        <th>APK SHA-256</th><th>SIG SHA-256</th><th>ACTIVE</th><th>ACTIONS</th>
+        <th>APK SHA-256</th><th>ACTIVE</th><th>ACTIONS</th>
       </tr>
     </thead>
     <tbody>
@@ -220,7 +220,6 @@ code{font-family:monospace;color:#00ff88;font-size:11px;word-break:break-all}
         <td>{{ a.version_name }} ({{ a.version_code }})</td>
         <td>{{ a.apk_size }}</td>
         <td><code title="{{ a.apk_sha256 }}">{{ a.apk_sha256[:16] }}...</code></td>
-        <td><code title="{{ a.sig_sha256 }}">{{ a.sig_sha256[:16] }}...</code></td>
         <td>{{ '✅' if a.active else '❌' }}</td>
         <td>
           <button class="btn o s" onclick="appAct({{ a.id }},'toggle')">TOGGLE</button>
@@ -245,6 +244,23 @@ code{font-family:monospace;color:#00ff88;font-size:11px;word-break:break-all}
 
 {% elif page == 'settings' %}
   <h1>⚙️ Settings</h1>
+  
+  <div class="box">
+    <h3>Dynamic UI Configuration</h3>
+    <form method="POST">
+      <label>App Name:</label>
+      <input type="text" name="app_name" value="{{ app_name }}" required>
+      
+      <label>Telegram Channel Link:</label>
+      <input type="text" name="telegram_channel" value="{{ telegram_channel }}" required>
+      
+      <label>Developer Link:</label>
+      <input type="text" name="telegram_developer" value="{{ telegram_developer }}" required>
+      
+      <button class="btn" style="margin-top:10px">SAVE UI</button>
+    </form>
+  </div>
+
   <div class="box">
     <h3>Maintenance Mode</h3>
     <p style="margin:10px 0">Status: <b style="color:{{ '#ff3333' if maintenance_mode=='on' else '#00ff88' }}">{{ maintenance_mode.upper() }}</b></p>
