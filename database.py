@@ -126,11 +126,34 @@ class AppIntegrity(db.Model):
     version_code = db.Column(db.Integer, default=0)
     apk_size = db.Column(db.BigInteger, nullable=False)
     apk_sha256 = db.Column(db.String(128), nullable=False)
-    sig_sha256 = db.Column(db.String(128), nullable=False)
+    sig_sha256 = db.Column(db.String(128), nullable=True) # Optional (Abhi use nahi ho raha)
     min_version_code = db.Column(db.Integer, default=0)
     active = db.Column(db.Boolean, default=True)
     registered_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# 🔥 NEW MODEL: DYNAMIC UI CONFIG
+class AppConfig(db.Model):
+    __tablename__ = 'app_config'
+    id = db.Column(db.Integer, primary_key=True)
+    app_name = db.Column(db.String(64), default='APEX V2')
+    telegram_channel = db.Column(db.String(128), default='https://t.me/your_channel')
+    telegram_developer = db.Column(db.String(128), default='https://t.me/your_dev')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    @staticmethod
+    def get_config():
+        config = AppConfig.query.first()
+        if not config:
+            config = AppConfig(
+                app_name='APEX V2',
+                telegram_channel='https://t.me/your_channel',
+                telegram_developer='https://t.me/your_dev'
+            )
+            db.session.add(config)
+            db.session.commit()
+        return config
 
 
 # ═══════════════════════════════════════════════════
