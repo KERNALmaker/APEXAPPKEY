@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>APEX Admin</title>
+<title>APEX Admin & Reseller</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,sans-serif;background:#0a0a0a;color:#fff;display:flex}
@@ -55,6 +55,8 @@ input:focus,select:focus,textarea:focus{outline:none;border-color:#00ff88}
 .no-device{color:#666;font-size:11px;font-style:italic}
 code{font-family:monospace;color:#00ff88;font-size:11px;word-break:break-all}
 label{font-size:12px;color:#aaa;margin-top:8px;display:block}
+.reseller-card {background:#1a1a1a; border: 1px solid #00ff88; padding:20px; border-radius:10px; margin-bottom:20px;}
+.price-tag {font-size:20px; color:#00ff88; font-weight:bold;}
 </style>
 </head>
 <body>
@@ -62,7 +64,7 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
 {% if page == 'login' %}
 <div class="login-wrap">
   <div class="login-box">
-    <h1>🔐 APEX ADMIN</h1>
+    <h1>🔐 ADMIN LOGIN</h1>
     {% if error %}<div class="fl e">{{ error }}</div>{% endif %}
     <form method="POST">
       <input type="text" name="username" placeholder="Username" required autofocus>
@@ -70,6 +72,25 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
       {% if require_2fa %}<input type="text" name="totp_code" placeholder="2FA Code" required>{% endif %}
       <button class="btn" style="width:100%;margin-top:14px;padding:12px">LOGIN</button>
     </form>
+    <div style="text-align:center; margin-top: 15px;">
+      <a href="{{ url_for('reseller_login') }}" style="color:#888; font-size:12px; text-decoration:none;">Login as Reseller →</a>
+    </div>
+  </div>
+</div>
+
+{% elif page == 'reseller_login' %}
+<div class="login-wrap">
+  <div class="login-box">
+    <h1 style="color:#0088ff;">💼 RESELLER LOGIN</h1>
+    {% if error %}<div class="fl e">{{ error }}</div>{% endif %}
+    <form method="POST">
+      <input type="text" name="username" placeholder="Reseller Username" required autofocus>
+      <input type="password" name="password" placeholder="Password" required>
+      <button class="btn b" style="width:100%;margin-top:14px;padding:12px">LOGIN</button>
+    </form>
+    <div style="text-align:center; margin-top: 15px;">
+      <a href="{{ url_for('login') }}" style="color:#888; font-size:12px; text-decoration:none;">← Back to Admin Login</a>
+    </div>
   </div>
 </div>
 
@@ -81,52 +102,174 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
   </div>
 </div>
 
-{% else %}
-
+{% elif page == 'reseller_dashboard' %}
+<!-- 🔥 RESELLER DASHBOARD (No Admin Menu) -->
 <div class="side">
-  <h2>APEX</h2>
+  <h2 style="color:#0088ff;">RESELLER</h2>
+  <a href="#" class="on">📊 Dashboard</a>
+  <a href="{{ url_for('logout') }}">🚪 Logout</a>
+</div>
+<div class="main">
+  <h1>Welcome, {{ reseller.username }}</h1>
+  
+  <div class="reseller-card">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <div>
+        <div style="color:#888; font-size:12px; text-transform:uppercase;">Available Credits</div>
+        <div class="price-tag">{{ reseller.credits }} Credits (₹{{ reseller.credits * 50 }})</div>
+      </div>
+      <div>
+        <form action="{{ url_for('reseller_redeem') }}" method="POST" style="display:flex; gap:10px;">
+          <input type="text" name="coupon_code" placeholder="Enter Coupon Code" required style="width:200px; margin:0;">
+          <button class="btn b" type="submit">Redeem</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="fl {{ 's' if category == 'success' else 'e' }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="box">
+    <h3>Generate License Key</h3>
+    <table>
+      <tr><th>Duration</th><th>Price</th><th>Credits Needed</th><th>Action</th></tr>
+      {% for dur, data in prices.items() %}
+      <tr>
+        <td>{{ dur }} Days</td>
+        <td>₹{{ data.price }}</td>
+        <td>{{ data.price // 50 }} Credits</td>
+        <td>
+          <form action="{{ url_for('reseller_generate_key') }}" method="POST" style="margin:0;">
+            <input type="hidden" name="duration" value="{{ dur }}">
+            <button class="btn" type="submit" {% if reseller.credits < (data.price // 50) %}disabled style="opacity:0.5; cursor:not-allowed;"{% endif %}>Generate Key</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <div class="box">
+    <h3>My Generated Keys</h3>
+    <table>
+      <tr><th>Key</th><th>Duration</th><th>Status</th><th>Created At</th></tr>
+      {% for k in keys %}
+      <tr>
+        <td><code>{{ k.key }}</code></td>
+        <td>{{ k.duration }}</td>
+        <td><span class="bg {{ k.status }}">{{ k.status }}</span></td>
+        <td>{{ k.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      </tr>
+      {% endfor %}
+      {% if not keys %}
+      <tr><td colspan="4" style="text-align:center; color:#888;">No keys generated yet.</td></tr>
+      {% endif %}
+    </table>
+  </div>
+</div>
+
+{% else %}
+<!-- 🔥 ADMIN DASHBOARD -->
+<div class="side">
+  <h2>APEX ADMIN</h2>
   <a href="{{ url_for('dashboard') }}" class="{% if page=='dashboard' %}on{% endif %}">📊 Dashboard</a>
-  <a href="{{ url_for('licenses') }}" class="{% if page=='licenses' %}on{% endif %}">🔑 Licenses</a>
+  <a href="{{ url_for('licenses') }}" class="{% if page=='licenses' %}on{% endif %}">🔑 All Keys</a>
+  <a href="{{ url_for('admin_resellers') }}" class="{% if page=='resellers' %}on{% endif %}">💼 Resellers</a>
   <a href="{{ url_for('apps_page') }}" class="{% if page=='apps' %}on{% endif %}">📱 Apps</a>
   <a href="{{ url_for('users') }}" class="{% if page=='users' %}on{% endif %}">👥 Users</a>
   <a href="{{ url_for('logs_page') }}" class="{% if page=='logs' %}on{% endif %}">📜 Logs</a>
   <a href="{{ url_for('settings') }}" class="{% if page=='settings' %}on{% endif %}">⚙️ Settings</a>
-  <a href="{{ url_for('setup_2fa') }}" class="{% if page=='2fa' %}on{% endif %}">🔒 2FA</a>
   <a href="{{ url_for('logout') }}">🚪 Logout</a>
 </div>
 
 <div class="main">
-
 {% if page == 'dashboard' %}
-  <h1>📊 Dashboard</h1>
+  <h1>📊 Admin Dashboard</h1>
   <div class="cards">
-    <div class="card"><div class="l">Total</div><div class="v">{{ stats.total }}</div></div>
+    <div class="card"><div class="l">Total Keys</div><div class="v">{{ stats.total }}</div></div>
     <div class="card"><div class="l">Active</div><div class="v">{{ stats.active }}</div></div>
-    <div class="card r"><div class="l">Expired</div><div class="v">{{ stats.expired }}</div></div>
-    <div class="card o"><div class="l">Frozen</div><div class="v">{{ stats.frozen }}</div></div>
-    <div class="card r"><div class="l">Revoked</div><div class="v">{{ stats.revoked }}</div></div>
-    <div class="card b"><div class="l">Pending</div><div class="v">{{ stats.pending }}</div></div>
-    <div class="card b"><div class="l">Apps</div><div class="v">{{ stats.apps }}</div></div>
+    <div class="card b"><div class="l">Resellers</div><div class="v">{{ stats.resellers }}</div></div>
+    <div class="card o"><div class="l">Unused Coupons</div><div class="v">{{ stats.coupons }}</div></div>
   </div>
   <div class="box"><h3>Recent Activity</h3>
   <table><tr><th>Time</th><th>Action</th><th>Details</th><th>IP</th></tr>
   {% for l in logs %}<tr><td>{{ l.created_at.strftime('%m-%d %H:%M') }}</td><td>{{ l.action }}</td><td>{{ l.details or '-' }}</td><td>{{ l.ip_address or '-' }}</td></tr>{% endfor %}
   </table></div>
 
-{% elif page == 'licenses' %}
-  <h1>🔑 Licenses</h1>
+{% elif page == 'resellers' %}
+  <h1>💼 Reseller Management</h1>
+  
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="fl {{ 's' if category == 'success' else 'e' }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
   <div class="box">
-    <h3>Generate Keys</h3>
+    <h3>Create New Reseller</h3>
+    <form method="POST" class="grid-form" style="grid-template-columns: 1fr 1fr auto;">
+      <input type="text" name="username" placeholder="Username" required>
+      <input type="text" name="password" placeholder="Password" required>
+      <button class="btn" type="submit">CREATE</button>
+    </form>
+  </div>
+
+  <div class="box">
+    <h3>Generate Coupon (Credits)</h3>
+    <p style="color:#888; font-size:12px; margin-bottom:10px;">1 Credit = ₹50. E.g., If you want ₹500 coupon, enter 10 credits.</p>
+    <form action="{{ url_for('generate_coupon') }}" method="POST" class="grid-form" style="grid-template-columns: 1fr auto;">
+      <input type="number" name="credits" placeholder="Credits" required>
+      <button class="btn b" type="submit">GENERATE COUPON</button>
+    </form>
+  </div>
+
+  <table>
+    <tr><th>Reseller Username</th><th>Credits</th><th>Status</th><th>Actions</th></tr>
+    {% for r in resellers %}
+    <tr>
+      <td>{{ r.username }}</td>
+      <td>{{ r.credits }}</td>
+      <td>{{ '✅ Active' if r.is_active else '❌ Disabled' }}</td>
+      <td>
+        <a href="{{ url_for('toggle_reseller', rid=r.id) }}" class="btn {{ 'r' if r.is_active else 'b' }} s">{{ 'Disable' if r.is_active else 'Enable' }}</a>
+        <a href="{{ url_for('delete_reseller', rid=r.id) }}" class="btn r s" onclick="return confirm('Delete this reseller and all their keys?')">DELETE</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+
+  <div class="box">
+    <h3>Recent Coupons</h3>
+    <table>
+      <tr><th>Code</th><th>Credits</th><th>Status</th></tr>
+      {% for c in coupons %}
+      <tr>
+        <td><code>{{ c.code }}</code></td>
+        <td>{{ c.credits }}</td>
+        <td>{{ '❌ Used' if c.is_used else '✅ Unused' }}</td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+{% elif page == 'licenses' %}
+  <h1>🔑 All Licenses (Including Reseller Keys)</h1>
+  <div class="box">
+    <h3>Generate Keys (Admin)</h3>
     <form id="genForm" class="grid-form">
       <input type="number" name="count" placeholder="Count" value="1" min="1" max="10000">
       <select name="duration">
         {% for d in durations %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
-        <option value="CUSTOM">CUSTOM</option>
       </select>
       <input type="number" name="max_devices" placeholder="Max Devices" value="1" min="1" max="100">
-      <input type="text" name="ip_lock" placeholder="IP (optional)">
-      <input type="text" name="country_lock" placeholder="Country (optional)">
-      <input type="text" name="app_version_lock" placeholder="Version (optional)">
       <button type="submit" class="btn">GENERATE</button>
     </form>
   </div>
@@ -140,48 +283,21 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
     </select>
     <button class="btn">FILTER</button>
     <a href="{{ url_for('export') }}?format=csv" class="btn b">CSV</a>
-    <a href="{{ url_for('export') }}?format=json" class="btn b">JSON</a>
   </form>
   <table>
-    <thead>
-      <tr>
-        <th>KEY</th><th>STATUS</th><th>DURATION</th>
-        <th>⏱️ REMAINING</th><th>DEVICES</th><th>HWID</th><th>ACTIONS</th>
-      </tr>
-    </thead>
+    <thead><tr><th>KEY</th><th>STATUS</th><th>DURATION</th><th>REMAINING</th><th>CREATED BY</th><th>ACTIONS</th></tr></thead>
     <tbody>
       {% for l in licenses.items %}
       <tr>
         <td><code>{{ l.key }}</code></td>
         <td><span class="bg {{ l.status }}">{{ l.status }}</span></td>
         <td>{{ l.duration }}</td>
-        <td>
-          {% if l.remaining == 'EXPIRED' %}
-            <span class="timer red">⏱️ EXPIRED</span>
-          {% elif l.remaining == 'LIFETIME' %}
-            <span class="timer green">♾️ LIFETIME</span>
-          {% elif l.remaining == 'PENDING' %}
-            <span style="color:#888">⏳ Pending</span>
-          {% else %}
-            <span class="timer orange">⏱️ {{ l.remaining }}</span>
-          {% endif %}
-        </td>
-        <td>
-          {% if l.device_count > 0 %}
-            <span class="device">📱 {{ l.device_count }}/{{ l.max_devices }}</span>
-            <div class="device-list">
-              {% for dev in l.devices %}<div>• {{ dev }}</div>{% endfor %}
-            </div>
-          {% else %}
-            <span class="no-device">— No device —</span>
-          {% endif %}
-        </td>
-        <td><code>{{ (l.hwid or '-')[:12] }}</code></td>
+        <td>{{ l.remaining }}</td>
+        <td>{{ l.created_by or 'Admin' }}</td>
         <td>
           <button class="btn r s" onclick="act({{ l.id }},'revoke')">REVOKE</button>
           <button class="btn o s" onclick="act({{ l.id }},'reset_hwid')">RESET</button>
-          <button class="btn b s" onclick="act({{ l.id }},'freeze')">FREEZE</button>
-          <button class="btn r s" onclick="act({{ l.id }},'delete')">DELETE</button>
+          <button class="btn r s" onclick="act({{ l.id }},'delete')">DEL</button>
         </td>
       </tr>
       {% endfor %}
@@ -191,49 +307,27 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
 {% elif page == 'apps' %}
   <h1>📱 App Integrity</h1>
   <div class="box">
-    <h3>Register New App / Update Baseline</h3>
-    <p style="color:#888;font-size:12px;margin-bottom:10px">
-      Get values from build: <code>stat -c%s app.apk</code>, <code>sha256sum app.apk</code>
-    </p>
+    <h3>Register / Update App</h3>
     <form id="appForm" class="grid-form">
-      <input type="text" name="package" placeholder="Package (com.apex.client)" required>
-      <input type="text" name="version_name" placeholder="Version Name (1.0)">
-      <input type="number" name="version_code" placeholder="Version Code (1)" value="1">
-      <input type="number" name="min_version_code" placeholder="Min Version Code" value="0">
-      <input type="number" name="apk_size" placeholder="APK Size (bytes)" required>
+      <input type="text" name="package" placeholder="Package" required>
+      <input type="number" name="apk_size" placeholder="APK Size" required>
       <input type="text" name="apk_sha256" placeholder="APK SHA-256" required>
-      <input type="text" name="sig_sha256" placeholder="Signature SHA-256 (Optional)">
       <button type="submit" class="btn">REGISTER</button>
     </form>
   </div>
   <table>
-    <thead>
-      <tr>
-        <th>PACKAGE</th><th>VERSION</th><th>SIZE</th>
-        <th>APK SHA-256</th><th>ACTIVE</th><th>ACTIONS</th>
-      </tr>
-    </thead>
+    <thead><tr><th>PACKAGE</th><th>SIZE</th><th>HASH</th><th>ACTIVE</th><th>ACTION</th></tr></thead>
     <tbody>
       {% for a in apps %}
       <tr>
         <td><code>{{ a.package }}</code></td>
-        <td>{{ a.version_name }} ({{ a.version_code }})</td>
         <td>{{ a.apk_size }}</td>
-        <td><code title="{{ a.apk_sha256 }}">{{ a.apk_sha256[:16] }}...</code></td>
+        <td><code>{{ a.apk_sha256[:16] }}...</code></td>
         <td>{{ '✅' if a.active else '❌' }}</td>
-        <td>
-          <button class="btn o s" onclick="appAct({{ a.id }},'toggle')">TOGGLE</button>
-          <button class="btn r s" onclick="appAct({{ a.id }},'delete')">DELETE</button>
-        </td>
+        <td><button class="btn r s" onclick="appAct({{ a.id }},'delete')">DEL</button></td>
       </tr>
       {% endfor %}
     </tbody>
-  </table>
-
-{% elif page == 'users' %}
-  <h1>👥 Users</h1>
-  <table><tr><th>ID</th><th>Username</th><th>Admin</th><th>2FA</th><th>Last Login</th></tr>
-  {% for u in users %}<tr><td>{{ u.id }}</td><td>{{ u.username }}</td><td>{{ '✅' if u.is_admin else '❌' }}</td><td>{{ '✅' if u.totp_enabled else '❌' }}</td><td>{{ u.last_login.strftime('%Y-%m-%d %H:%M') if u.last_login else '-' }}</td></tr>{% endfor %}
   </table>
 
 {% elif page == 'logs' %}
@@ -244,48 +338,19 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
 
 {% elif page == 'settings' %}
   <h1>⚙️ Settings</h1>
-  
   <div class="box">
-    <h3>Dynamic UI Configuration</h3>
+    <h3>Dynamic UI</h3>
     <form method="POST">
-      <label>App Name:</label>
-      <input type="text" name="app_name" value="{{ app_name }}" required>
-      
-      <label>Telegram Channel Link:</label>
-      <input type="text" name="telegram_channel" value="{{ telegram_channel }}" required>
-      
-      <label>Developer Link:</label>
-      <input type="text" name="telegram_developer" value="{{ telegram_developer }}" required>
-      
+      <label>App Name:</label><input type="text" name="app_name" value="{{ app_name }}" required>
+      <label>Channel Link:</label><input type="text" name="telegram_channel" value="{{ telegram_channel }}" required>
+      <label>Developer Link:</label><input type="text" name="telegram_developer" value="{{ telegram_developer }}" required>
       <button class="btn" style="margin-top:10px">SAVE UI</button>
     </form>
   </div>
-
   <div class="box">
     <h3>Maintenance Mode</h3>
-    <p style="margin:10px 0">Status: <b style="color:{{ '#ff3333' if maintenance_mode=='on' else '#00ff88' }}">{{ maintenance_mode.upper() }}</b></p>
-    <button class="btn {{ 'r' if maintenance_mode=='on' else 'o' }}" onclick="toggleMaint()">
-      {{ 'TURN OFF' if maintenance_mode=='on' else 'TURN ON' }}
-    </button>
-  </div>
-  <div class="box">
-    <h3>Maintenance Message</h3>
-    <form method="POST">
-      <textarea name="maintenance_message" rows="3">{{ maintenance_message }}</textarea>
-      <button class="btn" style="margin-top:10px">SAVE</button>
-    </form>
-  </div>
-
-{% elif page == '2fa' %}
-  <h1>🔒 Setup 2FA</h1>
-  <div class="box" style="text-align:center">
-    <p style="margin-bottom:14px">Scan QR with Google Authenticator:</p>
-    <img src="data:image/png;base64,{{ qr }}" style="border-radius:10px">
-    <p style="margin:14px 0;color:#888">Or enter: <code>{{ secret }}</code></p>
-    <form method="POST" style="max-width:300px;margin:20px auto">
-      <input type="text" name="totp_code" placeholder="6-digit code" maxlength="6" required>
-      <button class="btn" style="width:100%;margin-top:10px">VERIFY</button>
-    </form>
+    <p>Status: <b style="color:{{ '#ff3333' if maintenance_mode=='on' else '#00ff88' }}">{{ maintenance_mode.upper() }}</b></p>
+    <button class="btn {{ 'r' if maintenance_mode=='on' else 'o' }}" onclick="toggleMaint()">{{ 'TURN OFF' if maintenance_mode=='on' else 'TURN ON' }}</button>
   </div>
 {% endif %}
 </div>
@@ -295,13 +360,11 @@ async function act(id, action) {
   if (!confirm(action + '?')) return;
   const r = await fetch(`/api/license/${action}/${id}`, {method:'POST'});
   if ((await r.json()).success) location.reload();
-  else alert('Failed');
 }
 async function appAct(id, action) {
   if (!confirm(action + '?')) return;
   const r = await fetch(`/api/apps/${action}/${id}`, {method:'POST'});
   if ((await r.json()).success) location.reload();
-  else alert('Failed');
 }
 async function toggleMaint() {
   const r = await fetch('/api/maintenance/toggle', {method:'POST'});
@@ -317,10 +380,7 @@ document.getElementById('genForm')?.addEventListener('submit', async e => {
     method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)
   });
   const j = await r.json();
-  if (j.success) {
-    alert(`✅ Generated ${j.count} keys!\n\n` + j.keys.slice(0,5).join('\n'));
-    location.reload();
-  } else alert('Failed');
+  if (j.success) { alert(`Generated ${j.count} keys!`); location.reload(); }
 });
 document.getElementById('appForm')?.addEventListener('submit', async e => {
   e.preventDefault();
@@ -328,16 +388,9 @@ document.getElementById('appForm')?.addEventListener('submit', async e => {
   const r = await fetch('/api/apps/register', {
     method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)
   });
-  const j = await r.json();
-  if (j.success) { alert('✅ App registered'); location.reload(); }
-  else alert('Failed: ' + (j.error || 'unknown'));
+  if ((await r.json()).success) { alert('Registered'); location.reload(); }
 });
 </script>
-
-{% if page == 'licenses' %}
-<script>setTimeout(() => location.reload(), 30000);</script>
-{% endif %}
-
 {% endif %}
 </body>
 </html>
