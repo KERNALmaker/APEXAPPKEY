@@ -21,6 +21,14 @@ DURATIONS = {
     'LIFETIME': 9999999999,
 }
 
+# 🔥 RESELLER RATES (1 Credit = ₹50)
+RESELLER_PRICES = {
+    '1D': {'price': 50, 'days': 1},    # 1 Credit
+    '3D': {'price': 150, 'days': 3},   # 3 Credits
+    '7D': {'price': 250, 'days': 7},   # 5 Credits
+    '15D': {'price': 400, 'days': 15}, # 8 Credits
+    '30D': {'price': 600, 'days': 30}, # 12 Credits
+}
 
 # ═══════════════════════════════════════════════════
 # MODELS
@@ -45,6 +53,7 @@ class License(db.Model):
     device_hwids = db.Column(db.Text, nullable=True)
     notes = db.Column(db.Text, nullable=True)
     created_by = db.Column(db.String(64), nullable=True)
+    reseller_id = db.Column(db.Integer, nullable=True) # 🔥 Linked to Reseller
 
     def time_remaining(self):
         if self.duration == 'LIFETIME': return "LIFETIME"
@@ -65,7 +74,6 @@ class License(db.Model):
             'remaining': self.time_remaining(),
         }
 
-
 class User(db.Model):
     __tablename__ = 'users'
     id = db.Column(db.Integer, primary_key=True)
@@ -79,6 +87,26 @@ class User(db.Model):
     locked_until = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+# 🔥 NEW: RESELLER MODEL
+class Reseller(db.Model):
+    __tablename__ = 'resellers'
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(64), unique=True, nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False)
+    credits = db.Column(db.Integer, default=0) # 1 Credit = ₹50
+    is_active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_login = db.Column(db.DateTime, nullable=True)
+
+# 🔥 NEW: COUPON MODEL
+class Coupon(db.Model):
+    __tablename__ = 'coupons'
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(32), unique=True, nullable=False)
+    credits = db.Column(db.Integer, nullable=False)
+    is_used = db.Column(db.Boolean, default=False)
+    used_by = db.Column(db.Integer, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
 class ActivityLog(db.Model):
     __tablename__ = 'activity_logs'
@@ -89,7 +117,6 @@ class ActivityLog(db.Model):
     ip_address = db.Column(db.String(64), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-
 class Heartbeat(db.Model):
     __tablename__ = 'heartbeats'
     id = db.Column(db.Integer, primary_key=True)
@@ -97,7 +124,6 @@ class Heartbeat(db.Model):
     hwid = db.Column(db.String(64), nullable=False)
     ip_address = db.Column(db.String(64), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
 
 class Setting(db.Model):
     __tablename__ = 'settings'
@@ -117,7 +143,6 @@ class Setting(db.Model):
         else: db.session.add(Setting(key=key, value=value))
         db.session.commit()
 
-
 class AppIntegrity(db.Model):
     __tablename__ = 'app_integrity'
     id = db.Column(db.Integer, primary_key=True)
@@ -126,14 +151,12 @@ class AppIntegrity(db.Model):
     version_code = db.Column(db.Integer, default=0)
     apk_size = db.Column(db.BigInteger, nullable=False)
     apk_sha256 = db.Column(db.String(128), nullable=False)
-    sig_sha256 = db.Column(db.String(128), nullable=True) # Optional (Abhi use nahi ho raha)
+    sig_sha256 = db.Column(db.String(128), nullable=True)
     min_version_code = db.Column(db.Integer, default=0)
     active = db.Column(db.Boolean, default=True)
     registered_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-
-# 🔥 NEW MODEL: DYNAMIC UI CONFIG
 class AppConfig(db.Model):
     __tablename__ = 'app_config'
     id = db.Column(db.Integer, primary_key=True)
@@ -155,7 +178,6 @@ class AppConfig(db.Model):
             db.session.commit()
         return config
 
-
 # ═══════════════════════════════════════════════════
 # HELPERS
 # ═══════════════════════════════════════════════════
@@ -164,22 +186,14 @@ def generate_key():
     parts = [''.join(secrets.choice(abc) for _ in range(4)) for _ in range(4)]
     return f"APEX-{'-'.join(parts)}"
 
-
 def is_expired(lic):
     if lic.duration == 'LIFETIME': return False
     if not lic.expires_at: return False
     return datetime.utcnow() > lic.expires_at
 
-
 def time_remaining(lic):
     return lic.time_remaining()
-
 
 def generate_hwid(android_id='', serial='', fingerprint='', cpu_info=''):
     combined = f"{android_id}|{serial}|{fingerprint}|{cpu_info}"
     return hashlib.sha256(combined.encode()).hexdigest()
-
-
-def verify_hwid(stored, client):
-    if not stored or not client: return False
-    return hmac.compare_digest(stored, client)
