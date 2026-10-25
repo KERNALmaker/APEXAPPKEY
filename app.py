@@ -12,9 +12,6 @@ from database import (db, License, User, Reseller, Coupon, ActivityLog, Heartbea
                       AppIntegrity, AppConfig, API_SECRET, DURATIONS, RESELLER_PRICES, 
                       generate_key, is_expired, time_remaining)
 
-# Import Reseller Blueprint
-from reseller import reseller_bp, ResellerUser
-
 # ═══════════════════════════════════════════════════
 # CONFIG
 # ═══════════════════════════════════════════════════
@@ -30,9 +27,6 @@ app.config['SQLALCHEMY_DATABASE_URI'] = os.getenv('DATABASE_URL', 'sqlite:///lic
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['MAX_CONTENT_LENGTH'] = 2 * 1024 * 1024
 db.init_app(app)
-
-# 🔥 Register Reseller Routes
-app.register_blueprint(reseller_bp, url_prefix='/reseller')
 
 login_manager = LoginManager()
 login_manager.init_app(app)
@@ -62,14 +56,16 @@ class AdminUser(UserMixin):
         self.id = u.id; self.username = u.username
         self.is_admin = u.is_admin; self.totp_enabled = u.totp_enabled
 
+class ResellerUser(UserMixin):
+    def __init__(self, r):
+        self.id = r.id; self.username = r.username; self.credits = r.credits
+
 @login_manager.user_loader
 def load_user(uid):
     if str(uid).startswith('res_'):
         rid = int(str(uid).replace('res_', ''))
         r = Reseller.query.get(rid)
-        if r:
-            return ResellerUser(r)
-        return None
+        return ResellerUser(r) if r else None
     else:
         u = User.query.get(int(uid))
         return AdminUser(u) if u else None
@@ -95,7 +91,7 @@ def ping():
 
 @app.before_request
 def check_maintenance():
-    if request.endpoint in ['maintenance', 'static', 'login', 'reseller.reseller_login',
+    if request.endpoint in ['maintenance', 'static', 'login', 'reseller_login',
                             'api_validate', 'api_heartbeat',
                             'api_integrity', 'api_button_action', 'api_app_config', 'health', 'ping']:
         return
@@ -106,14 +102,14 @@ def check_maintenance():
             return redirect(url_for('maintenance'))
 
 # ═══════════════════════════════════════════════════
-# AUTH (ADMIN ONLY)
+# ADMIN AUTH
 # ═══════════════════════════════════════════════════
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
         if isinstance(current_user, AdminUser): return redirect(url_for('dashboard'))
-        else: return redirect(url_for('reseller.dashboard'))
+        else: return redirect(url_for('reseller_dashboard'))
 
     if request.method == 'POST':
         u = User.query.filter_by(username=request.form.get('username', '')).first()
@@ -159,7 +155,7 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller.dashboard'))
+    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller_dashboard'))
     
     stats = {
         'total': License.query.count(),
@@ -181,7 +177,7 @@ def dashboard():
 @app.route('/admin_resellers', methods=['GET', 'POST'])
 @login_required
 def admin_resellers():
-    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller.dashboard'))
+    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller_dashboard'))
     
     if request.method == 'POST':
         username = request.form.get('username')
@@ -201,7 +197,7 @@ def admin_resellers():
 @app.route('/admin/delete_reseller/<int:rid>')
 @login_required
 def delete_reseller(rid):
-    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller.dashboard'))
+    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller_dashboard'))
     r = Reseller.query.get_or_404(rid)
     License.query.filter_by(reseller_id=r.id).delete()
     db.session.delete(r)
@@ -212,7 +208,7 @@ def delete_reseller(rid):
 @app.route('/admin/generate_coupon', methods=['POST'])
 @login_required
 def generate_coupon():
-    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller.dashboard'))
+    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller_dashboard'))
     credits = int(request.form.get('credits', 10))
     code = "CPN-" + secrets.token_hex(4).upper()
     c = Coupon(code=code, credits=credits)
@@ -223,11 +219,128 @@ def generate_coupon():
 @app.route('/admin/toggle_reseller/<int:rid>')
 @login_required
 def toggle_reseller(rid):
-    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller.dashboard'))
+    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller_dashboard'))
     r = Reseller.query.get_or_404(rid)
     r.is_active = not r.is_active
     db.session.commit()
     return redirect(url_for('admin_resellers'))
+
+# ═══════════════════════════════════════════════════
+# RESELLER LOGIN & DASHBOARD
+# ═══════════════════════════════════════════════════
+@app.route('/reseller_login', methods=['GET', 'POST'])
+def reseller_login():
+    if current_user.is_authenticated and isinstance(current_user, ResellerUser):
+        return redirect(url_for('reseller_dashboard'))
+
+    if request.method == 'POST':
+        r = Reseller.query.filter_by(username=request.form.get('username', '')).first()
+        pw = request.form.get('password', '')
+        
+        if not r or not check_password_hash(r.password_hash, pw):
+            return render_template('reseller_login.html', error='Invalid credentials')
+        if not r.is_active:
+            return render_template('reseller_login.html', error='Account disabled')
+
+        r.last_login = datetime.utcnow()
+        db.session.commit()
+        
+        login_user(ResellerUser(r))
+        return redirect(url_for('reseller_dashboard'))
+
+    return render_template('reseller_login.html')
+
+@app.route('/reseller_dashboard')
+@login_required
+def reseller_dashboard():
+    if not isinstance(current_user, ResellerUser): return redirect(url_for('dashboard'))
+    
+    r = Reseller.query.get(current_user.id)
+    my_keys = License.query.filter_by(reseller_id=r.id).order_by(License.created_at.desc()).all()
+    
+    return render_template('reseller_dashboard.html', reseller=r, keys=my_keys, prices=RESELLER_PRICES)
+
+@app.route('/reseller_redeem', methods=['POST'])
+@login_required
+def reseller_redeem():
+    if not isinstance(current_user, ResellerUser): return redirect(url_for('dashboard'))
+    
+    code = request.form.get('coupon_code', '').strip().upper()
+    c = Coupon.query.filter_by(code=code, is_used=False).first()
+    
+    if c:
+        c.is_used = True
+        c.used_by = current_user.id
+        r = Reseller.query.get(current_user.id)
+        r.credits += c.credits
+        db.session.commit()
+        flash(f'Redeemed {c.credits} Credits!', 'success')
+    else:
+        flash('Invalid or used coupon code.', 'error')
+        
+    return redirect(url_for('reseller_dashboard'))
+
+@app.route('/reseller_generate_key', methods=['POST'])
+@login_required
+def reseller_generate_key():
+    if not isinstance(current_user, ResellerUser): return redirect(url_for('dashboard'))
+    
+    duration = request.form.get('duration')
+    custom_prefix = request.form.get('custom_prefix', '').strip()
+    
+    r = Reseller.query.get(current_user.id)
+    
+    if duration not in RESELLER_PRICES:
+        flash('Invalid duration selected.', 'error')
+        return redirect(url_for('reseller_dashboard'))
+        
+    price_inr = RESELLER_PRICES[duration]['price']
+    credits_needed = price_inr // 50
+    
+    if r.credits < credits_needed:
+        flash('Not enough credits. Please redeem a coupon.', 'error')
+        return redirect(url_for('reseller_dashboard'))
+        
+    r.credits -= credits_needed
+    
+    dur_seconds = DURATIONS.get(duration, 86400)
+    lic = License(
+        key=generate_key(custom_prefix),
+        duration=duration,
+        duration_seconds=dur_seconds,
+        max_devices=1,
+        created_by=f"Reseller_{r.username}",
+        reseller_id=r.id
+    )
+    db.session.add(lic)
+    db.session.commit()
+    
+    flash(f'Key generated: {lic.key} ({duration})', 'success')
+    return redirect(url_for('reseller_dashboard'))
+
+@app.route('/reseller/action/<action>/<int:lid>', methods=['POST'])
+@login_required
+def reseller_key_action(action, lid):
+    if not isinstance(current_user, ResellerUser): return jsonify({'success': False}), 403
+    lic = License.query.get_or_404(lid)
+    
+    if lic.reseller_id != current_user.id:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+        
+    if action == 'revoke':
+        lic.status = 'revoked'
+    elif action == 'reset_hwid':
+        lic.hwid = None
+        lic.device_name = None
+        lic.device_hwids = None
+        lic.activated_at = None
+        lic.expires_at = None
+        lic.status = 'pending'
+    elif action == 'delete':
+        db.session.delete(lic)
+        
+    db.session.commit()
+    return jsonify({'success': True})
 
 # ═══════════════════════════════════════════════════
 # ADMIN: LICENSES
@@ -235,7 +348,7 @@ def toggle_reseller(rid):
 @app.route('/licenses')
 @login_required
 def licenses():
-    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller.dashboard'))
+    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller_dashboard'))
     
     page = request.args.get('page', 1, type=int)
     status = request.args.get('status', '')
@@ -277,7 +390,7 @@ def licenses():
 @app.route('/apps')
 @login_required
 def apps_page():
-    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller.dashboard'))
+    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller_dashboard'))
     apps = AppIntegrity.query.order_by(AppIntegrity.registered_at.desc()).all()
     return render_template('index.html', page='apps', apps=apps)
 
@@ -319,13 +432,13 @@ def app_action(action, aid):
 @app.route('/users')
 @login_required
 def users():
-    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller.dashboard'))
+    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller_dashboard'))
     return render_template('index.html', page='users', users=User.query.all())
 
 @app.route('/logs')
 @login_required
 def logs_page():
-    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller.dashboard'))
+    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller_dashboard'))
     page = request.args.get('page', 1, type=int)
     logs = ActivityLog.query.order_by(ActivityLog.created_at.desc()).paginate(page=page, per_page=100)
     return render_template('index.html', page='logs', logs=logs)
@@ -333,7 +446,7 @@ def logs_page():
 @app.route('/settings', methods=['GET', 'POST'])
 @login_required
 def settings():
-    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller.dashboard'))
+    if not isinstance(current_user, AdminUser): return redirect(url_for('reseller_dashboard'))
     if request.method == 'POST':
         Setting.set('maintenance_message', request.form.get('maintenance_message', ''))
         config = AppConfig.get_config()
@@ -539,4 +652,4 @@ with app.app_context():
         print(f"[!] DB init error: {e}")
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='0
