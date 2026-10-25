@@ -43,7 +43,7 @@ code{font-family:monospace;color:#00ff88;font-size:11px;word-break:break-all}
 <div class="side">
   <h2>RESELLER</h2>
   <a href="#" class="on">📊 Dashboard</a>
-  <a href="{{ url_for('reseller.logout') }}">🚪 Logout</a>
+  <a href="{{ url_for('logout') }}">🚪 Logout</a>
 </div>
 
 <div class="main">
@@ -56,7 +56,7 @@ code{font-family:monospace;color:#00ff88;font-size:11px;word-break:break-all}
         <div class="price-tag">{{ reseller.credits }} Credits (₹{{ reseller.credits * 50 }})</div>
       </div>
       <div>
-        <form action="{{ url_for('reseller.redeem') }}" method="POST" style="display:flex; gap:10px;">
+        <form action="{{ url_for('reseller_redeem') }}" method="POST" style="display:flex; gap:10px;">
           <input type="text" name="coupon_code" placeholder="Enter Coupon Code" required style="width:200px; margin:0;">
           <button class="btn" type="submit">Redeem</button>
         </form>
@@ -82,7 +82,7 @@ code{font-family:monospace;color:#00ff88;font-size:11px;word-break:break-all}
         <td>₹{{ data.price }}</td>
         <td>{{ data.price // 50 }} Credits</td>
         <td>
-          <form action="{{ url_for('reseller.generate_key_route') }}" method="POST" style="margin:0; display:flex;">
+          <form action="{{ url_for('reseller_generate_key') }}" method="POST" style="margin:0;">
             <input type="hidden" name="duration" value="{{ dur }}">
             <input type="text" name="custom_prefix" placeholder="e.g. RAUNAK" style="padding:6px; font-size:11px; width:120px; margin:0;">
         </td>
