@@ -155,7 +155,6 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
-    # 🔥 STRICT CHECK
     if not isinstance(current_user, AdminUser): return redirect(url_for('reseller_dashboard'))
     
     stats = {
@@ -239,9 +238,9 @@ def reseller_login():
         pw = request.form.get('password', '')
         
         if not r or not check_password_hash(r.password_hash, pw):
-            return render_template('index.html', page='reseller_login', error='Invalid credentials')
+            return render_template('reseller_login.html', error='Invalid credentials')
         if not r.is_active:
-            return render_template('index.html', page='reseller_login', error='Account disabled')
+            return render_template('reseller_login.html', error='Account disabled')
 
         r.last_login = datetime.utcnow()
         db.session.commit()
@@ -249,7 +248,7 @@ def reseller_login():
         login_user(ResellerUser(r))
         return redirect(url_for('reseller_dashboard'))
 
-    return render_template('index.html', page='reseller_login')
+    return render_template('reseller_login.html')
 
 @app.route('/reseller_dashboard')
 @login_required
@@ -259,7 +258,8 @@ def reseller_dashboard():
     r = Reseller.query.get(current_user.id)
     my_keys = License.query.filter_by(reseller_id=r.id).order_by(License.created_at.desc()).all()
     
-    return render_template('index.html', page='reseller_dashboard', reseller=r, keys=my_keys, prices=RESELLER_PRICES)
+    # 🔥 ALAG FILE (reseller.html) USE KI HAI
+    return render_template('reseller.html', reseller=r, keys=my_keys, prices=RESELLER_PRICES)
 
 @app.route('/reseller_redeem', methods=['POST'])
 @login_required
