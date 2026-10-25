@@ -138,7 +138,7 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
   <div class="box">
     <h3>Generate License Key</h3>
     <table>
-      <tr><th>Duration</th><th>Price</th><th>Credits Needed</th><th>Action</th></tr>
+      <tr><th>Duration</th><th>Price</th><th>Credits Needed</th><th>Custom Prefix (Optional)</th><th>Action</th></tr>
       {% for dur, data in prices.items() %}
       <tr>
         <td>{{ dur }} Days</td>
@@ -147,7 +147,11 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
         <td>
           <form action="{{ url_for('reseller_generate_key') }}" method="POST" style="margin:0;">
             <input type="hidden" name="duration" value="{{ dur }}">
-            <button class="btn" type="submit" {% if reseller.credits < (data.price // 50) %}disabled style="opacity:0.5; cursor:not-allowed;"{% endif %}>Generate Key</button>
+            <!-- 🔥 Custom Prefix Input -->
+            <input type="text" name="custom_prefix" placeholder="e.g. RAUNAK" style="padding:6px; font-size:11px; width:120px; margin:0;">
+        </td>
+        <td>
+            <button class="btn" type="submit" {% if reseller.credits < (data.price // 50) %}disabled style="opacity:0.5; cursor:not-allowed;"{% endif %}>Generate</button>
           </form>
         </td>
       </tr>
@@ -158,21 +162,35 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
   <div class="box">
     <h3>My Generated Keys</h3>
     <table>
-      <tr><th>Key</th><th>Duration</th><th>Status</th><th>Created At</th></tr>
+      <tr><th>Key</th><th>Duration</th><th>Status</th><th>Created At</th><th>Actions</th></tr>
       {% for k in keys %}
       <tr>
         <td><code>{{ k.key }}</code></td>
         <td>{{ k.duration }}</td>
         <td><span class="bg {{ k.status }}">{{ k.status }}</span></td>
         <td>{{ k.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td>
+          <button class="btn r s" onclick="resellerAct({{ k.id }},'revoke')">REVOKE</button>
+          <button class="btn o s" onclick="resellerAct({{ k.id }},'reset_hwid')">RESET</button>
+          <button class="btn r s" onclick="resellerAct({{ k.id }},'delete')">DEL</button>
+        </td>
       </tr>
       {% endfor %}
       {% if not keys %}
-      <tr><td colspan="4" style="text-align:center; color:#888;">No keys generated yet.</td></tr>
+      <tr><td colspan="5" style="text-align:center; color:#888;">No keys generated yet.</td></tr>
       {% endif %}
     </table>
   </div>
 </div>
+
+<script>
+async function resellerAct(id, action) {
+  if (!confirm(action + '?')) return;
+  const r = await fetch(`/reseller/action/${action}/${id}`, {method:'POST'});
+  if ((await r.json()).success) location.reload();
+  else alert('Failed');
+}
+</script>
 
 {% else %}
 <!-- 🔥 ADMIN DASHBOARD -->
@@ -270,6 +288,7 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
         {% for d in durations %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
       </select>
       <input type="number" name="max_devices" placeholder="Max Devices" value="1" min="1" max="100">
+      <input type="text" name="custom_prefix" placeholder="Custom Prefix (Optional)">
       <button type="submit" class="btn">GENERATE</button>
     </form>
   </div>
