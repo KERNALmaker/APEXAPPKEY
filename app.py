@@ -173,7 +173,7 @@ def dashboard():
 # ═══════════════════════════════════════════════════
 # ADMIN: RESELLER MANAGEMENT (CREATE & DELETE)
 # ═══════════════════════════════════════════════════
-@app.route('/resellers', methods=['GET', 'POST'])
+@app.route('/admin_resellers', methods=['GET', 'POST'])
 @login_required
 def admin_resellers():
     if not isinstance(current_user, AdminUser): return redirect(url_for('reseller_dashboard'))
@@ -198,7 +198,7 @@ def admin_resellers():
 def delete_reseller(rid):
     if not isinstance(current_user, AdminUser): return redirect(url_for('reseller_dashboard'))
     r = Reseller.query.get_or_404(rid)
-    License.query.filter_by(reseller_id=r.id).delete() # Delete their keys
+    License.query.filter_by(reseller_id=r.id).delete()
     db.session.delete(r)
     db.session.commit()
     flash(f'Reseller {r.username} and their keys deleted.', 'success')
@@ -225,9 +225,9 @@ def toggle_reseller(rid):
     return redirect(url_for('admin_resellers'))
 
 # ═══════════════════════════════════════════════════
-# RESELLER DASHBOARD (CLEAN)
+# RESELLER LOGIN & DASHBOARD
 # ═══════════════════════════════════════════════════
-@app.route('/reseller/login', methods=['GET', 'POST'])
+@app.route('/reseller_login', methods=['GET', 'POST'])
 def reseller_login():
     if current_user.is_authenticated and isinstance(current_user, ResellerUser):
         return redirect(url_for('reseller_dashboard'))
@@ -249,7 +249,7 @@ def reseller_login():
 
     return render_template('index.html', page='reseller_login')
 
-@app.route('/reseller/dashboard')
+@app.route('/reseller_dashboard')
 @login_required
 def reseller_dashboard():
     if not isinstance(current_user, ResellerUser): return redirect(url_for('dashboard'))
@@ -259,7 +259,7 @@ def reseller_dashboard():
     
     return render_template('index.html', page='reseller_dashboard', reseller=r, keys=my_keys, prices=RESELLER_PRICES)
 
-@app.route('/reseller/redeem', methods=['POST'])
+@app.route('/reseller_redeem', methods=['POST'])
 @login_required
 def reseller_redeem():
     if not isinstance(current_user, ResellerUser): return redirect(url_for('dashboard'))
@@ -279,12 +279,15 @@ def reseller_redeem():
         
     return redirect(url_for('reseller_dashboard'))
 
-@app.route('/reseller/generate_key', methods=['POST'])
+# 🔥 UPDATED RESELLER GENERATE KEY (Custom Prefix Support)
+@app.route('/reseller_generate_key', methods=['POST'])
 @login_required
 def reseller_generate_key():
     if not isinstance(current_user, ResellerUser): return redirect(url_for('dashboard'))
     
     duration = request.form.get('duration')
+    custom_prefix = request.form.get('custom_prefix', '').strip() # 🔥 Naya input
+    
     r = Reseller.query.get(current_user.id)
     
     if duration not in RESELLER_PRICES:
@@ -302,7 +305,7 @@ def reseller_generate_key():
     
     dur_seconds = DURATIONS.get(duration, 86400)
     lic = License(
-        key=generate_key(),
+        key=generate_key(custom_prefix), # 🔥 Custom prefix pass kiya
         duration=duration,
         duration_seconds=dur_seconds,
         max_devices=1,
@@ -314,6 +317,31 @@ def reseller_generate_key():
     
     flash(f'Key generated: {lic.key} ({duration})', 'success')
     return redirect(url_for('reseller_dashboard'))
+
+# 🔥 RESELLER KEY ACTIONS
+@app.route('/reseller/action/<action>/<int:lid>', methods=['POST'])
+@login_required
+def reseller_key_action(action, lid):
+    if not isinstance(current_user, ResellerUser): return jsonify({'success': False}), 403
+    lic = License.query.get_or_404(lid)
+    
+    if lic.reseller_id != current_user.id:
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+        
+    if action == 'revoke':
+        lic.status = 'revoked'
+    elif action == 'reset_hwid':
+        lic.hwid = None
+        lic.device_name = None
+        lic.device_hwids = None
+        lic.activated_at = None
+        lic.expires_at = None
+        lic.status = 'pending'
+    elif action == 'delete':
+        db.session.delete(lic)
+        
+    db.session.commit()
+    return jsonify({'success': True})
 
 # ═══════════════════════════════════════════════════
 # ADMIN: LICENSES
@@ -461,10 +489,17 @@ def generate():
     dur = d.get('duration', '1D')
     sec = int(d.get('custom_seconds', 0)) if dur == 'CUSTOM' else DURATIONS.get(dur, 0)
     max_dev = int(d.get('max_devices', 1))
+    custom_prefix = d.get('custom_prefix', '').strip() # 🔥 Admin bhi custom bana sake
 
     keys = []
     for _ in range(count):
-        lic = License(key=generate_key(), duration=dur, duration_seconds=sec, max_devices=max_dev, created_by=current_user.username)
+        lic = License(
+            key=generate_key(custom_prefix), 
+            duration=dur, 
+            duration_seconds=sec, 
+            max_devices=max_dev, 
+            created_by=current_user.username
+        )
         db.session.add(lic); keys.append(lic.key)
 
     db.session.commit()
