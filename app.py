@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, session
+from flask import Flask, request, jsonify, render_template, redirect, url_for, flash
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
@@ -58,9 +58,7 @@ class AdminUser(UserMixin):
 
 class ResellerUser(UserMixin):
     def __init__(self, r):
-        self.id = f"res_{r.id}" # 🔥 Force String ID to prevent collision
-        self.username = r.username
-        self.credits = r.credits
+        self.id = r.id; self.username = r.username; self.credits = r.credits
 
 @login_manager.user_loader
 def load_user(uid):
@@ -104,12 +102,11 @@ def check_maintenance():
             return redirect(url_for('maintenance'))
 
 # ═══════════════════════════════════════════════════
-# ADMIN AUTH
+# AUTH (ADMIN ONLY)
 # ═══════════════════════════════════════════════════
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    # Force Reseller to go to reseller login if session is reseller
     if current_user.is_authenticated:
         if isinstance(current_user, AdminUser): return redirect(url_for('dashboard'))
         else: return redirect(url_for('reseller_dashboard'))
@@ -158,7 +155,9 @@ def logout():
 @app.route('/dashboard')
 @login_required
 def dashboard():
+    # 🔥 STRICT CHECK
     if not isinstance(current_user, AdminUser): return redirect(url_for('reseller_dashboard'))
+    
     stats = {
         'total': License.query.count(),
         'active': License.query.filter_by(status='active').count(),
@@ -174,7 +173,7 @@ def dashboard():
     return render_template('index.html', page='dashboard', stats=stats, logs=logs)
 
 # ═══════════════════════════════════════════════════
-# ADMIN: RESELLER MANAGEMENT (CREATE & DELETE)
+# ADMIN: RESELLER MANAGEMENT
 # ═══════════════════════════════════════════════════
 @app.route('/admin_resellers', methods=['GET', 'POST'])
 @login_required
@@ -257,8 +256,7 @@ def reseller_login():
 def reseller_dashboard():
     if not isinstance(current_user, ResellerUser): return redirect(url_for('dashboard'))
     
-    rid = int(str(current_user.id).replace('res_', ''))
-    r = Reseller.query.get(rid)
+    r = Reseller.query.get(current_user.id)
     my_keys = License.query.filter_by(reseller_id=r.id).order_by(License.created_at.desc()).all()
     
     return render_template('index.html', page='reseller_dashboard', reseller=r, keys=my_keys, prices=RESELLER_PRICES)
@@ -274,8 +272,7 @@ def reseller_redeem():
     if c:
         c.is_used = True
         c.used_by = current_user.id
-        rid = int(str(current_user.id).replace('res_', ''))
-        r = Reseller.query.get(rid)
+        r = Reseller.query.get(current_user.id)
         r.credits += c.credits
         db.session.commit()
         flash(f'Redeemed {c.credits} Credits!', 'success')
@@ -292,8 +289,7 @@ def reseller_generate_key():
     duration = request.form.get('duration')
     custom_prefix = request.form.get('custom_prefix', '').strip()
     
-    rid = int(str(current_user.id).replace('res_', ''))
-    r = Reseller.query.get(rid)
+    r = Reseller.query.get(current_user.id)
     
     if duration not in RESELLER_PRICES:
         flash('Invalid duration selected.', 'error')
@@ -329,7 +325,7 @@ def reseller_key_action(action, lid):
     if not isinstance(current_user, ResellerUser): return jsonify({'success': False}), 403
     lic = License.query.get_or_404(lid)
     
-    if lic.reseller_id != int(str(current_user.id).replace('res_', '')):
+    if lic.reseller_id != current_user.id:
         return jsonify({'success': False, 'error': 'Unauthorized'}), 403
         
     if action == 'revoke':
@@ -497,13 +493,7 @@ def generate():
 
     keys = []
     for _ in range(count):
-        lic = License(
-            key=generate_key(custom_prefix), 
-            duration=dur, 
-            duration_seconds=sec, 
-            max_devices=max_dev, 
-            created_by=current_user.username
-        )
+        lic = License(key=generate_key(custom_prefix), duration=dur, duration_seconds=sec, max_devices=max_dev, created_by=current_user.username)
         db.session.add(lic); keys.append(lic.key)
 
     db.session.commit()
