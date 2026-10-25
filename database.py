@@ -53,7 +53,7 @@ class License(db.Model):
     device_hwids = db.Column(db.Text, nullable=True)
     notes = db.Column(db.Text, nullable=True)
     created_by = db.Column(db.String(64), nullable=True)
-    reseller_id = db.Column(db.Integer, nullable=True) # 🔥 Linked to Reseller
+    reseller_id = db.Column(db.Integer, nullable=True)
 
     def time_remaining(self):
         if self.duration == 'LIFETIME': return "LIFETIME"
@@ -87,18 +87,16 @@ class User(db.Model):
     locked_until = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# 🔥 NEW: RESELLER MODEL
 class Reseller(db.Model):
     __tablename__ = 'resellers'
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(64), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
-    credits = db.Column(db.Integer, default=0) # 1 Credit = ₹50
+    credits = db.Column(db.Integer, default=0)
     is_active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime, nullable=True)
 
-# 🔥 NEW: COUPON MODEL
 class Coupon(db.Model):
     __tablename__ = 'coupons'
     id = db.Column(db.Integer, primary_key=True)
@@ -181,10 +179,16 @@ class AppConfig(db.Model):
 # ═══════════════════════════════════════════════════
 # HELPERS
 # ═══════════════════════════════════════════════════
-def generate_key():
+def generate_key(custom_prefix=None):
     abc = string.ascii_uppercase + string.digits
-    parts = [''.join(secrets.choice(abc) for _ in range(4)) for _ in range(4)]
-    return f"APEX-{'-'.join(parts)}"
+    if custom_prefix:
+        # Clean string and uppercase it
+        clean_prefix = "".join(e for e in custom_prefix if e.isalnum()).upper()
+        rand_part = ''.join(secrets.choice(abc) for _ in range(4))
+        return f"APEX-{clean_prefix}-{rand_part}"
+    else:
+        parts = [''.join(secrets.choice(abc) for _ in range(4)) for _ in range(4)]
+        return f"APEX-{'-'.join(parts)}"
 
 def is_expired(lic):
     if lic.duration == 'LIFETIME': return False
