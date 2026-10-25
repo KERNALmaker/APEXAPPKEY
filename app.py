@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, render_template, redirect, url_for, flash
+from flask import Flask, request, jsonify, render_template, redirect, url_for, flash, session
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
@@ -58,7 +58,9 @@ class AdminUser(UserMixin):
 
 class ResellerUser(UserMixin):
     def __init__(self, r):
-        self.id = r.id; self.username = r.username; self.credits = r.credits
+        self.id = f"res_{r.id}" # 🔥 Force String ID to prevent collision
+        self.username = r.username
+        self.credits = r.credits
 
 @login_manager.user_loader
 def load_user(uid):
@@ -102,11 +104,12 @@ def check_maintenance():
             return redirect(url_for('maintenance'))
 
 # ═══════════════════════════════════════════════════
-# AUTH
+# ADMIN AUTH
 # ═══════════════════════════════════════════════════
 @app.route('/', methods=['GET', 'POST'])
 @app.route('/login', methods=['GET', 'POST'])
 def login():
+    # Force Reseller to go to reseller login if session is reseller
     if current_user.is_authenticated:
         if isinstance(current_user, AdminUser): return redirect(url_for('dashboard'))
         else: return redirect(url_for('reseller_dashboard'))
@@ -254,7 +257,8 @@ def reseller_login():
 def reseller_dashboard():
     if not isinstance(current_user, ResellerUser): return redirect(url_for('dashboard'))
     
-    r = Reseller.query.get(current_user.id)
+    rid = int(str(current_user.id).replace('res_', ''))
+    r = Reseller.query.get(rid)
     my_keys = License.query.filter_by(reseller_id=r.id).order_by(License.created_at.desc()).all()
     
     return render_template('index.html', page='reseller_dashboard', reseller=r, keys=my_keys, prices=RESELLER_PRICES)
@@ -270,7 +274,8 @@ def reseller_redeem():
     if c:
         c.is_used = True
         c.used_by = current_user.id
-        r = Reseller.query.get(current_user.id)
+        rid = int(str(current_user.id).replace('res_', ''))
+        r = Reseller.query.get(rid)
         r.credits += c.credits
         db.session.commit()
         flash(f'Redeemed {c.credits} Credits!', 'success')
@@ -279,16 +284,16 @@ def reseller_redeem():
         
     return redirect(url_for('reseller_dashboard'))
 
-# 🔥 UPDATED RESELLER GENERATE KEY (Custom Prefix Support)
 @app.route('/reseller_generate_key', methods=['POST'])
 @login_required
 def reseller_generate_key():
     if not isinstance(current_user, ResellerUser): return redirect(url_for('dashboard'))
     
     duration = request.form.get('duration')
-    custom_prefix = request.form.get('custom_prefix', '').strip() # 🔥 Naya input
+    custom_prefix = request.form.get('custom_prefix', '').strip()
     
-    r = Reseller.query.get(current_user.id)
+    rid = int(str(current_user.id).replace('res_', ''))
+    r = Reseller.query.get(rid)
     
     if duration not in RESELLER_PRICES:
         flash('Invalid duration selected.', 'error')
@@ -305,7 +310,7 @@ def reseller_generate_key():
     
     dur_seconds = DURATIONS.get(duration, 86400)
     lic = License(
-        key=generate_key(custom_prefix), # 🔥 Custom prefix pass kiya
+        key=generate_key(custom_prefix),
         duration=duration,
         duration_seconds=dur_seconds,
         max_devices=1,
@@ -318,14 +323,13 @@ def reseller_generate_key():
     flash(f'Key generated: {lic.key} ({duration})', 'success')
     return redirect(url_for('reseller_dashboard'))
 
-# 🔥 RESELLER KEY ACTIONS
 @app.route('/reseller/action/<action>/<int:lid>', methods=['POST'])
 @login_required
 def reseller_key_action(action, lid):
     if not isinstance(current_user, ResellerUser): return jsonify({'success': False}), 403
     lic = License.query.get_or_404(lid)
     
-    if lic.reseller_id != current_user.id:
+    if lic.reseller_id != int(str(current_user.id).replace('res_', '')):
         return jsonify({'success': False, 'error': 'Unauthorized'}), 403
         
     if action == 'revoke':
@@ -489,7 +493,7 @@ def generate():
     dur = d.get('duration', '1D')
     sec = int(d.get('custom_seconds', 0)) if dur == 'CUSTOM' else DURATIONS.get(dur, 0)
     max_dev = int(d.get('max_devices', 1))
-    custom_prefix = d.get('custom_prefix', '').strip() # 🔥 Admin bhi custom bana sake
+    custom_prefix = d.get('custom_prefix', '').strip()
 
     keys = []
     for _ in range(count):
