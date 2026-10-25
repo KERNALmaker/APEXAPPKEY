@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>APEX Reseller Panel</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,sans-serif;background:#0a0a0a;color:#fff;display:flex}
+.side{width:220px;background:#1a1a1a;height:100vh;position:fixed;padding:20px 0;border-right:1px solid #2a2a2a;overflow-y:auto}
+.side h2{color:#0088ff;text-align:center;margin-bottom:30px;letter-spacing:2px}
+.side a{display:block;color:#ccc;text-decoration:none;padding:12px 20px;border-left:3px solid transparent;transition:.2s}
+.side a:hover,.side a.on{background:#0a0a0a;color:#0088ff;border-left-color:#0088ff}
+.main{margin-left:220px;padding:30px;width:calc(100% - 220px);min-height:100vh}
+h1{color:#0088ff;margin-bottom:24px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:30px}
+.card{background:#1a1a1a;padding:18px;border-radius:10px;border-left:4px solid #0088ff}
+.card .l{color:#888;font-size:11px;text-transform:uppercase}
+.card .v{font-size:26px;font-weight:bold;color:#0088ff;margin-top:6px}
+table{width:100%;border-collapse:collapse;background:#1a1a1a;border-radius:10px;overflow:hidden;margin-bottom:20px}
+th,td{padding:10px;text-align:left;border-bottom:1px solid #2a2a2a;font-size:12px;vertical-align:top}
+th{background:#0a0a0a;color:#0088ff;font-size:11px;text-transform:uppercase;letter-spacing:0.5px}
+tr:hover{background:#222}
+.btn{display:inline-block;padding:8px 14px;background:#0088ff;color:#fff;border:none;border-radius:6px;cursor:pointer;text-decoration:none;font-weight:bold;font-size:12px}
+.btn:hover{background:#0066cc}
+.btn.r{background:#ff3333}
+.btn.o{background:#ffaa00;color:#000}
+.btn.s{padding:6px 10px;font-size:10px;letter-spacing:0.3px;min-width:65px;margin:2px}
+input,select,textarea{padding:9px;background:#0a0a0a;border:1px solid #333;color:#fff;border-radius:6px;font-size:13px;width:100%;margin:4px 0}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#0088ff}
+.fl{padding:10px;border-radius:6px;margin-bottom:14px}
+.fl.s{background:#002244;color:#00aaff}
+.fl.e{background:#330000;color:#ff5555}
+.bg{padding:3px 8px;border-radius:4px;font-size:10px;font-weight:bold;text-transform:uppercase}
+.bg.active{background:#003300;color:#00ff88}
+.bg.expired,.bg.revoked{background:#330000;color:#ff5555}
+.bg.frozen{background:#332200;color:#ffaa00}
+.bg.pending{background:#222;color:#888}
+.box{background:#1a1a1a;padding:20px;border-radius:10px;margin-bottom:20px}
+.box h3{color:#0088ff;margin-bottom:14px;font-size:15px}
+code{font-family:monospace;color:#00ff88;font-size:11px;word-break:break-all}
+.reseller-card {background:#1a1a1a; border: 1px solid #0088ff; padding:20px; border-radius:10px; margin-bottom:20px;}
+.price-tag {font-size:20px; color:#0088ff; font-weight:bold;}
+</style>
+</head>
+<body>
+
+<div class="side">
+  <h2>RESELLER</h2>
+  <a href="#" class="on">📊 Dashboard</a>
+  <a href="{{ url_for('logout') }}">🚪 Logout</a>
+</div>
+
+<div class="main">
+  <h1>Welcome, {{ reseller.username }}</h1>
+  
+  <div class="reseller-card">
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <div>
+        <div style="color:#888; font-size:12px; text-transform:uppercase;">Available Credits</div>
+        <div class="price-tag">{{ reseller.credits }} Credits (₹{{ reseller.credits * 50 }})</div>
+      </div>
+      <div>
+        <form action="{{ url_for('reseller_redeem') }}" method="POST" style="display:flex; gap:10px;">
+          <input type="text" name="coupon_code" placeholder="Enter Coupon Code" required style="width:200px; margin:0;">
+          <button class="btn" type="submit">Redeem</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="fl {{ 's' if category == 'success' else 'e' }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="box">
+    <h3>Generate License Key</h3>
+    <table>
+      <tr><th>Duration</th><th>Price</th><th>Credits Needed</th><th>Custom Prefix (Optional)</th><th>Action</th></tr>
+      {% for dur, data in prices.items() %}
+      <tr>
+        <td>{{ dur }} Days</td>
+        <td>₹{{ data.price }}</td>
+        <td>{{ data.price // 50 }} Credits</td>
+        <td>
+          <form action="{{ url_for('reseller_generate_key') }}" method="POST" style="margin:0;">
+            <input type="hidden" name="duration" value="{{ dur }}">
+            <input type="text" name="custom_prefix" placeholder="e.g. RAUNAK" style="padding:6px; font-size:11px; width:120px; margin:0;">
+        </td>
+        <td>
+            <button class="btn" type="submit" {% if reseller.credits < (data.price // 50) %}disabled style="opacity:0.5; cursor:not-allowed;"{% endif %}>Generate</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <div class="box">
+    <h3>My Generated Keys</h3>
+    <table>
+      <tr><th>Key</th><th>Duration</th><th>Status</th><th>Created At</th><th>Actions</th></tr>
+      {% for k in keys %}
+      <tr>
+        <td><code>{{ k.key }}</code></td>
+        <td>{{ k.duration }}</td>
+        <td><span class="bg {{ k.status }}">{{ k.status }}</span></td>
+        <td>{{ k.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+        <td>
+          <button class="btn r s" onclick="resellerAct({{ k.id }},'revoke')">REVOKE</button>
+          <button class="btn o s" onclick="resellerAct({{ k.id }},'reset_hwid')">RESET</button>
+          <button class="btn r s" onclick="resellerAct({{ k.id }},'delete')">DEL</button>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not keys %}
+      <tr><td colspan="5" style="text-align:center; color:#888;">No keys generated yet.</td></tr>
+      {% endif %}
+    </table>
+  </div>
+</div>
+
+<script>
+async function resellerAct(id, action) {
+  if (!confirm(action + '?')) return;
+  const r = await fetch(`/reseller/action/${action}/${id}`, {method:'POST'});
+  if ((await r.json()).success) location.reload();
+  else alert('Failed');
+}
+</script>
+
+</body>
+</html>
