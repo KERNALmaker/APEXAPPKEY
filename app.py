@@ -172,7 +172,7 @@ def generate_coupon():
     return redirect(url_for('admin_resellers'))
 
 # ═══════════════════════════════════════════════════
-# ADMIN: LICENSES (WITH REMAINING TIME)
+# ADMIN: LICENSES (Remaining Time Timestamp Bhejna)
 # ═══════════════════════════════════════════════════
 @app.route('/licenses')
 @login_required
@@ -189,19 +189,15 @@ def licenses():
 
     lics = q.order_by(License.created_at.desc()).paginate(page=page, per_page=50)
 
-    # 🔥 Remaining Time Calculate
     now = datetime.utcnow()
     for l in lics.items:
-        if l.duration == 'LIFETIME': l.remaining = "LIFETIME"
+        # 🔥 JavaScript ke liye timestamp bhejo
+        if l.duration == 'LIFETIME':
+            l.remaining_js = -1
         elif l.expires_at:
-            diff = (l.expires_at - now).total_seconds()
-            if diff <= 0: l.remaining = "EXPIRED"
-            else:
-                d = int(diff // 86400); h = int((diff % 86400) // 3600); m = int((diff % 3600) // 60)
-                if d > 0: l.remaining = f"{d}d {h}h {m}m"
-                elif h > 0: l.remaining = f"{h}h {m}m"
-                else: l.remaining = f"{m}m"
-        else: l.remaining = "PENDING"
+            l.remaining_js = int((l.expires_at - now).total_seconds())
+        else:
+            l.remaining_js = -2
 
     return render_template('index.html', page='licenses', licenses=lics, status=status, search=search, durations=list(DURATIONS.keys()))
 
@@ -328,6 +324,16 @@ def reseller_dashboard():
     r = Reseller.query.get(rid)
     my_keys = License.query.filter_by(reseller_id=r.id).order_by(License.created_at.desc()).all()
     
+    # 🔥 Reseller ke liye bhi timestamp bhejo
+    now = datetime.utcnow()
+    for k in my_keys:
+        if k.duration == 'LIFETIME':
+            k.remaining_js = -1
+        elif k.expires_at:
+            k.remaining_js = int((k.expires_at - now).total_seconds())
+        else:
+            k.remaining_js = -2
+    
     return render_template('reseller_dashboard.html', reseller=r, keys=my_keys, prices=RESELLER_PRICES)
 
 @app.route('/reseller_redeem', methods=['POST'])
@@ -417,7 +423,7 @@ def reseller_key_action(action, lid):
     return jsonify({'success': True})
 
 # ═══════════════════════════════════════════════════
-# ADMIN: LICENSE GENERATE (Max Devices)
+# ADMIN: LICENSE GENERATE
 # ═══════════════════════════════════════════════════
 @app.route('/api/license/generate', methods=['POST'])
 @login_required
@@ -452,7 +458,7 @@ def lic_action(action, lid):
     return jsonify({'success': True})
 
 # ═══════════════════════════════════════════════════
-# CLIENT APIs (Multiple Records Check)
+# CLIENT APIs
 # ═══════════════════════════════════════════════════
 @app.route('/api/integrity', methods=['POST'])
 def api_integrity():
