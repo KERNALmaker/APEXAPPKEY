@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>APEX Admin</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:-apple-system,sans-serif;background:#0a0a0a;color:#fff;display:flex}
+.side{width:220px;background:#1a1a1a;height:100vh;position:fixed;padding:20px 0;border-right:1px solid #2a2a2a;overflow-y:auto}
+.side h2{color:#00ff88;text-align:center;margin-bottom:30px;letter-spacing:2px}
+.side a{display:block;color:#ccc;text-decoration:none;padding:12px 20px;border-left:3px solid transparent;transition:.2s}
+.side a:hover,.side a.on{background:#0a0a0a;color:#00ff88;border-left-color:#00ff88}
+.main{margin-left:220px;padding:30px;width:calc(100% - 220px);min-height:100vh}
+h1{color:#00ff88;margin-bottom:24px}
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:30px}
+.card{background:#1a1a1a;padding:18px;border-radius:10px;border-left:4px solid #00ff88}
+.card .l{color:#888;font-size:11px;text-transform:uppercase}
+.card .v{font-size:26px;font-weight:bold;color:#00ff88;margin-top:6px}
+.card.r{border-left-color:#ff3333}.card.r .v{color:#ff3333}
+.card.o{border-left-color:#ffaa00}.card.o .v{color:#ffaa00}
+.card.b{border-left-color:#0088ff}.card.b .v{color:#0088ff}
+table{width:100%;border-collapse:collapse;background:#1a1a1a;border-radius:10px;overflow:hidden;margin-bottom:20px}
+th,td{padding:10px;text-align:left;border-bottom:1px solid #2a2a2a;font-size:12px;vertical-align:top}
+th{background:#0a0a0a;color:#00ff88;font-size:11px;text-transform:uppercase;letter-spacing:0.5px}
+tr:hover{background:#222}
+.btn{display:inline-block;padding:8px 14px;background:#00ff88;color:#000;border:none;border-radius:6px;cursor:pointer;text-decoration:none;font-weight:bold;font-size:12px}
+.btn:hover{background:#00cc66}
+.btn.r{background:#ff3333;color:#fff}
+.btn.o{background:#ffaa00;color:#000}
+.btn.b{background:#0088ff;color:#fff}
+.btn.s{padding:6px 10px;font-size:10px;letter-spacing:0.3px;min-width:65px;margin:2px}
+input,select,textarea{padding:9px;background:#0a0a0a;border:1px solid #333;color:#fff;border-radius:6px;font-size:13px;width:100%;margin:4px 0}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#00ff88}
+.fl{padding:10px;border-radius:6px;margin-bottom:14px}
+.fl.s{background:#003300;color:#00ff88}
+.fl.e{background:#330000;color:#ff5555}
+.bg{padding:3px 8px;border-radius:4px;font-size:10px;font-weight:bold;text-transform:uppercase}
+.bg.active{background:#003300;color:#00ff88}
+.bg.expired,.bg.revoked{background:#330000;color:#ff5555}
+.bg.frozen{background:#332200;color:#ffaa00}
+.bg.pending{background:#222;color:#888}
+.box{background:#1a1a1a;padding:20px;border-radius:10px;margin-bottom:20px}
+.box h3{color:#00ff88;margin-bottom:14px;font-size:15px}
+.login-wrap{display:flex;justify-content:center;align-items:center;min-height:100vh;width:100%}
+.login-box{background:#1a1a1a;padding:40px;border-radius:12px;width:380px;border:1px solid #2a2a2a}
+.login-box h1{text-align:center}
+.grid-form{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;align-items:start}
+code{font-family:monospace;color:#00ff88;font-size:11px;word-break:break-all}
+label{font-size:12px;color:#aaa;margin-top:8px;display:block}
+</style>
+</head>
+<body>
+
+{% if page == 'login' %}
+<div class="login-wrap">
+  <div class="login-box">
+    <h1>?? ADMIN LOGIN</h1>
+    {% if error %}<div class="fl e">{{ error }}</div>{% endif %}
+    <form method="POST">
+      <input type="text" name="username" placeholder="Username" required autofocus>
+      <input type="password" name="password" placeholder="Password" required>
+      <button class="btn" style="width:100%;margin-top:14px;padding:12px">LOGIN</button>
+    </form>
+    <div style="text-align:center; margin-top: 15px;">
+      <a href="{{ url_for('reseller_login') }}" style="color:#888; font-size:12px; text-decoration:none;">Login as Reseller ?</a>
+    </div>
+  </div>
+</div>
+
+{% else %}
+
+<div class="side">
+  <h2>APEX ADMIN</h2>
+  <a href="{{ url_for('dashboard') }}" class="{% if page=='dashboard' %}on{% endif %}">?? Dashboard</a>
+  <a href="{{ url_for('licenses') }}" class="{% if page=='licenses' %}on{% endif %}">?? All Keys</a>
+  <a href="{{ url_for('admin_resellers') }}" class="{% if page=='resellers' %}on{% endif %}">?? Resellers</a>
+  <a href="{{ url_for('apps_page') }}" class="{% if page=='apps' %}on{% endif %}">?? Apps</a>
+  <a href="{{ url_for('logs_page') }}" class="{% if page=='logs' %}on{% endif %}">?? Logs</a>
+  <a href="{{ url_for('settings') }}" class="{% if page=='settings' %}on{% endif %}">?? Settings</a>
+  <a href="{{ url_for('logout') }}">?? Logout</a>
+</div>
+
+<div class="main">
+{% if page == 'dashboard' %}
+  <h1>?? Admin Dashboard</h1>
+  <div class="cards">
+    <div class="card"><div class="l">Total Keys</div><div class="v">{{ stats.total }}</div></div>
+    <div class="card"><div class="l">Active</div><div class="v">{{ stats.active }}</div></div>
+    <div class="card b"><div class="l">Resellers</div><div class="v">{{ stats.resellers }}</div></div>
+    <div class="card o"><div class="l">Unused Coupons</div><div class="v">{{ stats.coupons }}</div></div>
+  </div>
+  <div class="box"><h3>Recent Activity</h3>
+  <table><tr><th>Time</th><th>Action</th><th>Details</th><th>IP</th></tr>
+  {% for l in logs %}<tr><td>{{ l.created_at.strftime('%m-%d %H:%M') }}</td><td>{{ l.action }}</td><td>{{ l.details or '-' }}</td><td>{{ l.ip_address or '-' }}</td></tr>{% endfor %}
+  </table></div>
+
+{% elif page == 'resellers' %}
+  <h1>?? Reseller Management</h1>
+  
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="fl {{ 's' if category == 'success' else 'e' }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="box">
+    <h3>Create New Reseller</h3>
+    <form method="POST" class="grid-form" style="grid-template-columns: 1fr 1fr auto;">
+      <input type="text" name="username" placeholder="Username" required>
+      <input type="text" name="password" placeholder="Password" required>
+      <button class="btn" type="submit">CREATE</button>
+    </form>
+  </div>
+
+  <div class="box">
+    <h3>Generate Coupon (Credits)</h3>
+    <form action="{{ url_for('generate_coupon') }}" method="POST" class="grid-form" style="grid-template-columns: 1fr auto;">
+      <input type="number" name="credits" placeholder="Credits" required>
+      <button class="btn b" type="submit">GENERATE COUPON</button>
+    </form>
+  </div>
+
+  <table>
+    <tr><th>Reseller</th><th>Credits</th><th>Status</th><th>Actions</th></tr>
+    {% for r in resellers %}
+    <tr>
+      <td>{{ r.username }}</td>
+      <td>{{ r.credits }}</td>
+      <td>{{ '? Active' if r.is_active else '? Disabled' }}</td>
+      <td>
+        <a href="{{ url_for('delete_reseller', rid=r.id) }}" class="btn r s" onclick="return confirm('Delete this reseller?')">DELETE</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+
+{% elif page == 'licenses' %}
+  <h1>?? All Licenses (Including Reseller Keys)</h1>
+  <div class="box">
+    <h3>Generate Keys (Admin)</h3>
+    <form id="genForm" class="grid-form">
+      <input type="number" name="count" placeholder="Count" value="1" min="1" max="10000">
+      <select name="duration">
+        {% for d in durations %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
+      </select>
+      
+      <!-- ?? Max Devices Dropdown -->
+      <select name="max_devices" id="maxDevicesSelect">
+        <option value="1">1 Device</option>
+        <option value="2">2 Devices</option>
+        <option value="5">5 Devices</option>
+        <option value="10">10 Devices</option>
+        <option value="50">50 Devices</option>
+        <option value="100">100 Devices</option>
+        <option value="custom">Custom Devices</option>
+      </select>
+      
+      <!-- Custom Devices Input (Hidden by default) -->
+      <input type="number" name="custom_devices" id="customDevicesInput" placeholder="Custom Devices" min="1" max="1000" style="display:none;">
+      
+      <input type="text" name="custom_prefix" placeholder="Custom Prefix (Optional)">
+      <button type="submit" class="btn">GENERATE</button>
+    </form>
+  </div>
+  <table>
+    <thead><tr><th>KEY</th><th>STATUS</th><th>DURATION</th><th>DEVICES</th><th>CREATED BY</th><th>ACTIONS</th></tr></thead>
+    <tbody>
+      {% for l in licenses.items %}
+      <tr>
+        <td><code>{{ l.key }}</code></td>
+        <td><span class="bg {{ l.status }}">{{ l.status }}</span></td>
+        <td>{{ l.duration }}</td>
+        <td>{{ l.max_devices }}</td>
+        <td>{{ l.created_by or 'Admin' }}</td>
+        <td>
+          <button class="btn r s" onclick="act({{ l.id }},'revoke')">REVOKE</button>
+          <button class="btn o s" onclick="act({{ l.id }},'reset_hwid')">RESET</button>
+          <button class="btn r s" onclick="act({{ l.id }},'delete')">DEL</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+{% elif page == 'apps' %}
+  <h1>?? App Integrity</h1>
+  <div class="box">
+    <h3>Register / Update App</h3>
+    <form id="appForm" class="grid-form">
+      <input type="text" name="package" placeholder="Package (com.apex.client)" required>
+      <input type="number" name="apk_size" placeholder="APK Size" required>
+      <input type="text" name="apk_sha256" placeholder="APK SHA-256" required>
+      <button type="submit" class="btn">REGISTER</button>
+    </form>
+  </div>
+  <table>
+    <thead><tr><th>PACKAGE</th><th>SIZE</th><th>HASH</th><th>ACTIVE</th><th>ACTION</th></tr></thead>
+    <tbody>
+      {% for a in apps %}
+      <tr>
+        <td><code>{{ a.package }}</code></td>
+        <td>{{ a.apk_size }}</td>
+        <td><code>{{ a.apk_sha256[:16] }}...</code></td>
+        <td>{{ '?' if a.active else '?' }}</td>
+        <td><button class="btn r s" onclick="appAct({{ a.id }},'delete')">DEL</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+{% elif page == 'logs' %}
+  <h1>?? Logs</h1>
+  <table><tr><th>Time</th><th>Action</th><th>Details</th><th>IP</th></tr>
+  {% for l in logs.items %}<tr><td>{{ l.created_at.strftime('%m-%d %H:%M:%S') }}</td><td>{{ l.action }}</td><td>{{ l.details or '-' }}</td><td>{{ l.ip_address or '-' }}</td></tr>{% endfor %}
+  </table>
+
+{% elif page == 'settings' %}
+  <h1>?? Settings</h1>
+  
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="fl {{ 's' if category == 'success' else 'e' }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="box">
+    <h3>Dynamic UI</h3>
+    <form method="POST">
+      <label>App Name:</label><input type="text" name="app_name" value="{{ app_name }}" required>
+      <label>Channel Link:</label><input type="text" name="telegram_channel" value="{{ telegram_channel }}" required>
+      <label>Developer Link:</label><input type="text" name="telegram_developer" value="{{ telegram_developer }}" required>
+      <button class="btn" style="margin-top:10px">SAVE UI</button>
+    </form>
+  </div>
+  
+  <div class="box">
+    <h3>Maintenance Mode</h3>
+    <p>Status: <b style="color:{{ '#ff3333' if maintenance_mode=='on' else '#00ff88' }}">{{ maintenance_mode.upper() }}</b></p>
+    <button class="btn {{ 'r' if maintenance_mode=='on' else 'o' }}" onclick="toggleMaint()">{{ 'TURN OFF' if maintenance_mode=='on' else 'TURN ON' }}</button>
+  </div>
+{% endif %}
+</div>
+
+<script>
+async function act(id, action) {
+  if (!confirm(action + '?')) return;
+  const r = await fetch(`/api/license/${action}/${id}`, {method:'POST'});
+  if ((await r.json()).success) location.reload();
+}
+async function appAct(id, action) {
+  if (!confirm(action + '?')) return;
+  const r = await fetch(`/api/apps/${action}/${id}`, {method:'POST'});
+  if ((await r.json()).success) location.reload();
+}
+async function toggleMaint() {
+  const r = await fetch('/api/maintenance/toggle', {method:'POST'});
+  const j = await r.json();
+  if (j.success) location.reload();
+}
+document.getElementById('maxDevicesSelect')?.addEventListener('change', function() {
+    const customInput = document.getElementById('customDevicesInput');
+    if(this.value === 'custom') {
+        customInput.style.display = 'block';
+    } else {
+        customInput.style.display = 'none';
+    }
+});
+document.getElementById('genForm')?.addEventListener('submit', async e => {
+  e.preventDefault();
+  const data = Object.fromEntries(new FormData(e.target));
+  data.count = parseInt(data.count);
+  
+  // Handle Custom Devices
+  if (data.max_devices === 'custom') {
+      data.max_devices = parseInt(data.custom_devices) || 1;
+  } else {
+      data.max_devices = parseInt(data.max_devices) || 1;
+  }
+  
+  const r = await fetch('/api/license/generate', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)
+  });
+  const j = await r.json();
+  if (j.success) { alert(`Generated ${j.count} keys!`); location.reload(); }
+});
+document.getElementById('appForm')?.addEventListener('submit', async e => {
+  e.preventDefault();
+  const data = Object.fromEntries(new FormData(e.target));
+  const r = await fetch('/api/apps/register', {
+    method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(data)
+  });
+  if ((await r.json()).success) { alert('Registered'); location.reload(); }
+  else { alert('Failed to register'); }
+});
+</script>
+{% endif %}
+</body>
+</html>
