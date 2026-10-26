@@ -45,6 +45,10 @@ def generate_token(key, hwid):
         'exp': int((datetime.utcnow() + timedelta(hours=1)).timestamp())
     }, JWT_SECRET, algorithm='HS256')
 
+def verify_token(token):
+    try: return jwt.decode(token, JWT_SECRET, algorithms=['HS256'])
+    except Exception: return None
+
 class AdminUser(UserMixin):
     def __init__(self, u):
         self.id = u.id; self.username = u.username
@@ -172,7 +176,7 @@ def generate_coupon():
     return redirect(url_for('admin_resellers'))
 
 # ═══════════════════════════════════════════════════
-# ADMIN: LICENSES (Remaining Time Timestamp Bhejna)
+# ADMIN: LICENSES
 # ═══════════════════════════════════════════════════
 @app.route('/licenses')
 @login_required
@@ -191,13 +195,9 @@ def licenses():
 
     now = datetime.utcnow()
     for l in lics.items:
-        # 🔥 JavaScript ke liye timestamp bhejo
-        if l.duration == 'LIFETIME':
-            l.remaining_js = -1
-        elif l.expires_at:
-            l.remaining_js = int((l.expires_at - now).total_seconds())
-        else:
-            l.remaining_js = -2
+        if l.duration == 'LIFETIME': l.remaining_js = -1
+        elif l.expires_at: l.remaining_js = int((l.expires_at - now).total_seconds())
+        else: l.remaining_js = -2
 
     return render_template('index.html', page='licenses', licenses=lics, status=status, search=search, durations=list(DURATIONS.keys()))
 
@@ -254,13 +254,11 @@ def settings():
     
     if request.method == 'POST':
         Setting.set('maintenance_message', request.form.get('maintenance_message', ''))
-        
         config = AppConfig.get_config()
         config.app_name = request.form.get('app_name', config.app_name)
         config.telegram_channel = request.form.get('telegram_channel', config.telegram_channel)
         config.telegram_developer = request.form.get('telegram_developer', config.telegram_developer)
         db.session.commit()
-        
         flash('Settings saved successfully!', 'success')
         return redirect(url_for('settings'))
         
@@ -268,9 +266,7 @@ def settings():
     return render_template('index.html', page='settings',
         maintenance_mode=Setting.get('maintenance_mode', 'off'),
         maintenance_message=Setting.get('maintenance_message', ''),
-        app_name=config.app_name, 
-        telegram_channel=config.telegram_channel, 
-        telegram_developer=config.telegram_developer
+        app_name=config.app_name, telegram_channel=config.telegram_channel, telegram_developer=config.telegram_developer
     )
 
 @app.route('/api/maintenance/toggle', methods=['POST'])
@@ -324,15 +320,11 @@ def reseller_dashboard():
     r = Reseller.query.get(rid)
     my_keys = License.query.filter_by(reseller_id=r.id).order_by(License.created_at.desc()).all()
     
-    # 🔥 Reseller ke liye bhi timestamp bhejo
     now = datetime.utcnow()
     for k in my_keys:
-        if k.duration == 'LIFETIME':
-            k.remaining_js = -1
-        elif k.expires_at:
-            k.remaining_js = int((k.expires_at - now).total_seconds())
-        else:
-            k.remaining_js = -2
+        if k.duration == 'LIFETIME': k.remaining_js = -1
+        elif k.expires_at: k.remaining_js = int((k.expires_at - now).total_seconds())
+        else: k.remaining_js = -2
     
     return render_template('reseller_dashboard.html', reseller=r, keys=my_keys, prices=RESELLER_PRICES)
 
@@ -458,7 +450,7 @@ def lic_action(action, lid):
     return jsonify({'success': True})
 
 # ═══════════════════════════════════════════════════
-# CLIENT APIs
+# CLIENT APIs (Heartbeat + Button Action Wapas Add Kiye)
 # ═══════════════════════════════════════════════════
 @app.route('/api/integrity', methods=['POST'])
 def api_integrity():
@@ -526,6 +518,46 @@ def api_validate():
         'valid': True, 'token': token, 'status': lic.status, 
         'time_remaining': time_remaining(lic)
     })})
+
+# 🔥 FIX: Heartbeat Route Wapas Add Kiya
+@app.route('/api/heartbeat', methods=['POST'])
+def api_heartbeat():
+    d = request.get_json()
+    if not d or d.get('secret') != API_SECRET: return jsonify({'error': 'Invalid'}), 403
+    
+    payload = verify_token(d.get('token', ''))
+    if not payload or payload.get('hwid') != d.get('hwid', ''):
+        return jsonify({'data': encrypt_response({'valid': False, 'reason': 'TOKEN_EXPIRED'})})
+    
+    lic = License.query.filter_by(key=payload.get('key')).first()
+    if not lic or lic.status != 'active' or is_expired(lic):
+        return jsonify({'data': encrypt_response({'valid': False, 'reason': 'EXPIRED'})})
+    
+    lic.last_heartbeat = datetime.utcnow()
+    db.session.commit()
+    
+    return jsonify({'data': encrypt_response({'valid': True, 'time_remaining': time_remaining(lic)})})
+
+# 🔥 FIX: Button Action Route Wapas Add Kiya
+@app.route('/api/button_action', methods=['POST'])
+def api_button_action():
+    d = request.get_json()
+    if not d or d.get('secret') != API_SECRET: return jsonify({'error': 'Invalid'}), 403
+    
+    payload = verify_token(d.get('token', ''))
+    if not payload or payload.get('hwid') != d.get('hwid', ''):
+        return jsonify({'data': encrypt_response({'valid': False, 'reason': 'TOKEN_EXPIRED'})})
+    
+    lic = License.query.filter_by(key=payload.get('key')).first()
+    if not lic or lic.status != 'active' or is_expired(lic):
+        return jsonify({'data': encrypt_response({'valid': False, 'reason': 'EXPIRED'})})
+    
+    action = d.get('action', '')
+    if action in ['inject', 'bypass']:
+        magic_sig = hmac.new(b"apex_super_secret_key_xyz", f"{lic.key}:{d.get('hwid')}:{action}".encode(), hashlib.sha256).hexdigest()
+        return jsonify({'data': encrypt_response({'valid': True, 'action': action.upper() + '_READY', 'sig': magic_sig[:16]})})
+    
+    return jsonify({'data': encrypt_response({'valid': False, 'reason': 'UNKNOWN_ACTION'})})
 
 # ═══════════════════════════════════════════════════
 # INIT DB
