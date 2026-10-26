@@ -55,7 +55,7 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
 {% if page == 'login' %}
 <div class="login-wrap">
   <div class="login-box">
-    <h1>?? ADMIN LOGIN</h1>
+    <h1>🔐 ADMIN LOGIN</h1>
     {% if error %}<div class="fl e">{{ error }}</div>{% endif %}
     <form method="POST">
       <input type="text" name="username" placeholder="Username" required autofocus>
@@ -63,7 +63,7 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
       <button class="btn" style="width:100%;margin-top:14px;padding:12px">LOGIN</button>
     </form>
     <div style="text-align:center; margin-top: 15px;">
-      <a href="{{ url_for('reseller_login') }}" style="color:#888; font-size:12px; text-decoration:none;">Login as Reseller ?</a>
+      <a href="{{ url_for('reseller_login') }}" style="color:#888; font-size:12px; text-decoration:none;">Login as Reseller →</a>
     </div>
   </div>
 </div>
@@ -72,18 +72,18 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
 
 <div class="side">
   <h2>APEX ADMIN</h2>
-  <a href="{{ url_for('dashboard') }}" class="{% if page=='dashboard' %}on{% endif %}">?? Dashboard</a>
-  <a href="{{ url_for('licenses') }}" class="{% if page=='licenses' %}on{% endif %}">?? All Keys</a>
-  <a href="{{ url_for('admin_resellers') }}" class="{% if page=='resellers' %}on{% endif %}">?? Resellers</a>
-  <a href="{{ url_for('apps_page') }}" class="{% if page=='apps' %}on{% endif %}">?? Apps</a>
-  <a href="{{ url_for('logs_page') }}" class="{% if page=='logs' %}on{% endif %}">?? Logs</a>
-  <a href="{{ url_for('settings') }}" class="{% if page=='settings' %}on{% endif %}">?? Settings</a>
-  <a href="{{ url_for('logout') }}">?? Logout</a>
+  <a href="{{ url_for('dashboard') }}" class="{% if page=='dashboard' %}on{% endif %}">📊 Dashboard</a>
+  <a href="{{ url_for('licenses') }}" class="{% if page=='licenses' %}on{% endif %}">🔑 All Keys</a>
+  <a href="{{ url_for('admin_resellers') }}" class="{% if page=='resellers' %}on{% endif %}">💼 Resellers</a>
+  <a href="{{ url_for('apps_page') }}" class="{% if page=='apps' %}on{% endif %}">📱 Apps</a>
+  <a href="{{ url_for('logs_page') }}" class="{% if page=='logs' %}on{% endif %}">📜 Logs</a>
+  <a href="{{ url_for('settings') }}" class="{% if page=='settings' %}on{% endif %}">⚙️ Settings</a>
+  <a href="{{ url_for('logout') }}">🚪 Logout</a>
 </div>
 
 <div class="main">
 {% if page == 'dashboard' %}
-  <h1>?? Admin Dashboard</h1>
+  <h1>📊 Admin Dashboard</h1>
   <div class="cards">
     <div class="card"><div class="l">Total Keys</div><div class="v">{{ stats.total }}</div></div>
     <div class="card"><div class="l">Active</div><div class="v">{{ stats.active }}</div></div>
@@ -96,7 +96,7 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
   </table></div>
 
 {% elif page == 'resellers' %}
-  <h1>?? Reseller Management</h1>
+  <h1>💼 Reseller Management</h1>
   
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
@@ -129,7 +129,7 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
     <tr>
       <td>{{ r.username }}</td>
       <td>{{ r.credits }}</td>
-      <td>{{ '? Active' if r.is_active else '? Disabled' }}</td>
+      <td>{{ '✅ Active' if r.is_active else '❌ Disabled' }}</td>
       <td>
         <a href="{{ url_for('delete_reseller', rid=r.id) }}" class="btn r s" onclick="return confirm('Delete this reseller?')">DELETE</a>
       </td>
@@ -138,7 +138,7 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
   </table>
 
 {% elif page == 'licenses' %}
-  <h1>?? All Licenses (Including Reseller Keys)</h1>
+  <h1>🔑 All Licenses (Including Reseller Keys)</h1>
   <div class="box">
     <h3>Generate Keys (Admin)</h3>
     <form id="genForm" class="grid-form">
@@ -146,8 +146,6 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
       <select name="duration">
         {% for d in durations %}<option value="{{ d }}">{{ d }}</option>{% endfor %}
       </select>
-      
-      <!-- ?? Max Devices Dropdown -->
       <select name="max_devices" id="maxDevicesSelect">
         <option value="1">1 Device</option>
         <option value="2">2 Devices</option>
@@ -155,24 +153,31 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
         <option value="10">10 Devices</option>
         <option value="50">50 Devices</option>
         <option value="100">100 Devices</option>
-        <option value="custom">Custom Devices</option>
+        <option value="custom">Custom</option>
       </select>
-      
-      <!-- Custom Devices Input (Hidden by default) -->
       <input type="number" name="custom_devices" id="customDevicesInput" placeholder="Custom Devices" min="1" max="1000" style="display:none;">
-      
       <input type="text" name="custom_prefix" placeholder="Custom Prefix (Optional)">
       <button type="submit" class="btn">GENERATE</button>
     </form>
   </div>
   <table>
-    <thead><tr><th>KEY</th><th>STATUS</th><th>DURATION</th><th>DEVICES</th><th>CREATED BY</th><th>ACTIONS</th></tr></thead>
+    <thead><tr><th>KEY</th><th>STATUS</th><th>DURATION</th><th>REMAINING</th><th>DEVICES</th><th>CREATED BY</th><th>ACTIONS</th></tr></thead>
     <tbody>
       {% for l in licenses.items %}
       <tr>
         <td><code>{{ l.key }}</code></td>
         <td><span class="bg {{ l.status }}">{{ l.status }}</span></td>
         <td>{{ l.duration }}</td>
+        <td>
+          <!-- 🔥 Real-time countdown span -->
+          <span class="timer" data-seconds="{{ l.remaining_js }}">
+            {% if l.remaining_js == -1 %}♾️ LIFETIME
+            {% elif l.remaining_js == -2 %}⏳ PENDING
+            {% elif l.remaining_js <= 0 %}⏱️ EXPIRED
+            {% else %}⏱️ {{ l.remaining_js // 86400 }}d {{ (l.remaining_js % 86400) // 3600 }}h {{ (l.remaining_js % 3600) // 60 }}m
+            {% endif %}
+          </span>
+        </td>
         <td>{{ l.max_devices }}</td>
         <td>{{ l.created_by or 'Admin' }}</td>
         <td>
@@ -186,7 +191,7 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
   </table>
 
 {% elif page == 'apps' %}
-  <h1>?? App Integrity</h1>
+  <h1>📱 App Integrity</h1>
   <div class="box">
     <h3>Register / Update App</h3>
     <form id="appForm" class="grid-form">
@@ -204,7 +209,7 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
         <td><code>{{ a.package }}</code></td>
         <td>{{ a.apk_size }}</td>
         <td><code>{{ a.apk_sha256[:16] }}...</code></td>
-        <td>{{ '?' if a.active else '?' }}</td>
+        <td>{{ '✅' if a.active else '❌' }}</td>
         <td><button class="btn r s" onclick="appAct({{ a.id }},'delete')">DEL</button></td>
       </tr>
       {% endfor %}
@@ -212,13 +217,13 @@ label{font-size:12px;color:#aaa;margin-top:8px;display:block}
   </table>
 
 {% elif page == 'logs' %}
-  <h1>?? Logs</h1>
+  <h1>📜 Logs</h1>
   <table><tr><th>Time</th><th>Action</th><th>Details</th><th>IP</th></tr>
   {% for l in logs.items %}<tr><td>{{ l.created_at.strftime('%m-%d %H:%M:%S') }}</td><td>{{ l.action }}</td><td>{{ l.details or '-' }}</td><td>{{ l.ip_address or '-' }}</td></tr>{% endfor %}
   </table>
 
 {% elif page == 'settings' %}
-  <h1>?? Settings</h1>
+  <h1>⚙️ Settings</h1>
   
   {% with messages = get_flashed_messages(with_categories=true) %}
     {% if messages %}
@@ -275,7 +280,6 @@ document.getElementById('genForm')?.addEventListener('submit', async e => {
   const data = Object.fromEntries(new FormData(e.target));
   data.count = parseInt(data.count);
   
-  // Handle Custom Devices
   if (data.max_devices === 'custom') {
       data.max_devices = parseInt(data.custom_devices) || 1;
   } else {
@@ -297,6 +301,32 @@ document.getElementById('appForm')?.addEventListener('submit', async e => {
   if ((await r.json()).success) { alert('Registered'); location.reload(); }
   else { alert('Failed to register'); }
 });
+
+// 🔥 Real-Time Countdown JavaScript
+setInterval(() => {
+  document.querySelectorAll('.timer').forEach(el => {
+    let seconds = parseInt(el.getAttribute('data-seconds'));
+    if (isNaN(seconds) || seconds <= 0) {
+      if (seconds === 0) el.innerText = "⏱️ EXPIRED";
+      return;
+    }
+    
+    seconds -= 1;
+    el.setAttribute('data-seconds', seconds);
+    
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    const s = seconds % 60;
+    
+    let str = "⏱️ ";
+    if (d > 0) str += `${d}d ${h}h ${m}m ${s}s`;
+    else if (h > 0) str += `${h}h ${m}m ${s}s`;
+    else str += `${m}m ${s}s`;
+    
+    el.innerText = str;
+  });
+}, 1000);
 </script>
 {% endif %}
 </body>
