@@ -172,7 +172,7 @@ def generate_coupon():
     return redirect(url_for('admin_resellers'))
 
 # ═══════════════════════════════════════════════════
-# ADMIN: LICENSES
+# ADMIN: LICENSES (WITH REMAINING TIME)
 # ═══════════════════════════════════════════════════
 @app.route('/licenses')
 @login_required
@@ -189,6 +189,7 @@ def licenses():
 
     lics = q.order_by(License.created_at.desc()).paginate(page=page, per_page=50)
 
+    # 🔥 Remaining Time Calculate
     now = datetime.utcnow()
     for l in lics.items:
         if l.duration == 'LIFETIME': l.remaining = "LIFETIME"
@@ -205,7 +206,7 @@ def licenses():
     return render_template('index.html', page='licenses', licenses=lics, status=status, search=search, durations=list(DURATIONS.keys()))
 
 # ═══════════════════════════════════════════════════
-# ADMIN: APPS (Multiple Records Allowed)
+# ADMIN: APPS
 # ═══════════════════════════════════════════════════
 @app.route('/apps')
 @login_required
@@ -223,7 +224,6 @@ def register_app():
     for f in required:
         if f not in d: return jsonify({'success': False, 'error': f'missing {f}'}), 400
 
-    # 🔥 Hamesha Naya Record Banega (No Unique Check)
     app_db = AppIntegrity(
         package=d['package'],
         version_name=d.get('version_name', ''),
@@ -236,8 +236,6 @@ def register_app():
     )
     db.session.add(app_db)
     db.session.commit()
-    
-    log('app_register', d['package'])
     return jsonify({'success': True})
 
 @app.route('/api/apps/<action>/<int:aid>', methods=['POST'])
@@ -360,7 +358,7 @@ def reseller_generate_key():
     
     duration = request.form.get('duration')
     custom_prefix = request.form.get('custom_prefix', '').strip()
-    max_devices = 1 # 🔥 Reseller ke liye hamesha 1
+    max_devices = 1
     
     rid = int(str(current_user.id).replace('res_', ''))
     r = Reseller.query.get(rid)
@@ -464,7 +462,6 @@ def api_integrity():
     pkg = (d.get('package') or '').strip()
     if not pkg: return jsonify({'error': 'Missing package'}), 400
     
-    # 🔥 Match by exact size and hash
     try:
         client_size = int(d.get('apk_size', -1))
         client_apk_sha = (d.get('apk_sha256') or '').strip().lower()
