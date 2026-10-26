@@ -46,6 +46,7 @@ class License(db.Model):
     created_by = db.Column(db.String(64), nullable=True)
     reseller_id = db.Column(db.Integer, nullable=True)
 
+    # 🔥 Remaining Time Logic
     def time_remaining(self):
         if self.duration == 'LIFETIME': return "LIFETIME"
         if not self.expires_at: return "PENDING"
@@ -149,7 +150,7 @@ class AppConfig(db.Model):
 class AppIntegrity(db.Model):
     __tablename__ = 'app_integrity'
     id = db.Column(db.Integer, primary_key=True)
-    package = db.Column(db.String(128), nullable=False, index=True) # 🔥 Not Unique
+    package = db.Column(db.String(128), nullable=False, index=True) 
     version_name = db.Column(db.String(64), nullable=True)
     version_code = db.Column(db.Integer, default=0)
     apk_size = db.Column(db.BigInteger, nullable=False)
