@@ -1,17 +1,12 @@
 from flask_sqlalchemy import SQLAlchemy
-from datetime import datetime, timedelta
-import hashlib, hmac, secrets, string, json
-from Crypto.Cipher import AES
-from Crypto.Util.Padding import pad, unpad
-import base64
+from datetime import datetime
+import hashlib, secrets, string
 
 db = SQLAlchemy()
 
 # ═══════════════════════════════════════════════════
 # CONFIG
 # ═══════════════════════════════════════════════════
-AES_KEY = b'Yg&tc%DEuh6%Zc^8'
-AES_IV  = b'6oyZDr22E3ychjM%'
 API_SECRET = 'apex_api_secret_2026'
 
 DURATIONS = {
@@ -23,11 +18,11 @@ DURATIONS = {
 
 # 🔥 RESELLER RATES (1 Credit = ₹50)
 RESELLER_PRICES = {
-    '1D': {'price': 50, 'days': 1},    # 1 Credit
-    '3D': {'price': 150, 'days': 3},   # 3 Credits
-    '7D': {'price': 250, 'days': 7},   # 5 Credits
-    '15D': {'price': 400, 'days': 15}, # 8 Credits
-    '30D': {'price': 600, 'days': 30}, # 12 Credits
+    '1D': {'price': 50, 'credits': 1},
+    '3D': {'price': 150, 'credits': 3},
+    '7D': {'price': 250, 'credits': 5},
+    '15D': {'price': 400, 'credits': 8},
+    '30D': {'price': 600, 'credits': 12},
 }
 
 # ═══════════════════════════════════════════════════
@@ -42,16 +37,12 @@ class License(db.Model):
     duration_seconds = db.Column(db.Integer, nullable=False)
     max_devices = db.Column(db.Integer, default=1)
     status = db.Column(db.String(16), default='pending', index=True)
-    ip_lock = db.Column(db.String(64), nullable=True)
-    country_lock = db.Column(db.String(8), nullable=True)
-    app_version_lock = db.Column(db.String(32), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     activated_at = db.Column(db.DateTime, nullable=True)
     expires_at = db.Column(db.DateTime, nullable=True)
     last_heartbeat = db.Column(db.DateTime, nullable=True)
     device_name = db.Column(db.Text, nullable=True)
     device_hwids = db.Column(db.Text, nullable=True)
-    notes = db.Column(db.Text, nullable=True)
     created_by = db.Column(db.String(64), nullable=True)
     reseller_id = db.Column(db.Integer, nullable=True)
 
@@ -115,14 +106,6 @@ class ActivityLog(db.Model):
     ip_address = db.Column(db.String(64), nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-class Heartbeat(db.Model):
-    __tablename__ = 'heartbeats'
-    id = db.Column(db.Integer, primary_key=True)
-    license_key = db.Column(db.String(64), nullable=False, index=True)
-    hwid = db.Column(db.String(64), nullable=False)
-    ip_address = db.Column(db.String(64), nullable=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-
 class Setting(db.Model):
     __tablename__ = 'settings'
     id = db.Column(db.Integer, primary_key=True)
@@ -140,20 +123,6 @@ class Setting(db.Model):
         if s: s.value = value
         else: db.session.add(Setting(key=key, value=value))
         db.session.commit()
-
-class AppIntegrity(db.Model):
-    __tablename__ = 'app_integrity'
-    id = db.Column(db.Integer, primary_key=True)
-    package = db.Column(db.String(128), unique=True, nullable=False, index=True)
-    version_name = db.Column(db.String(64), nullable=True)
-    version_code = db.Column(db.Integer, default=0)
-    apk_size = db.Column(db.BigInteger, nullable=False)
-    apk_sha256 = db.Column(db.String(128), nullable=False)
-    sig_sha256 = db.Column(db.String(128), nullable=True)
-    min_version_code = db.Column(db.Integer, default=0)
-    active = db.Column(db.Boolean, default=True)
-    registered_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
 class AppConfig(db.Model):
     __tablename__ = 'app_config'
@@ -176,13 +145,27 @@ class AppConfig(db.Model):
             db.session.commit()
         return config
 
+# 🔥 APP INTEGRITY MODEL (Multiple Records Allowed)
+class AppIntegrity(db.Model):
+    __tablename__ = 'app_integrity'
+    id = db.Column(db.Integer, primary_key=True)
+    package = db.Column(db.String(128), nullable=False, index=True) # 🔥 Not Unique
+    version_name = db.Column(db.String(64), nullable=True)
+    version_code = db.Column(db.Integer, default=0)
+    apk_size = db.Column(db.BigInteger, nullable=False)
+    apk_sha256 = db.Column(db.String(128), nullable=False)
+    sig_sha256 = db.Column(db.String(128), nullable=True)
+    min_version_code = db.Column(db.Integer, default=0)
+    active = db.Column(db.Boolean, default=True)
+    registered_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 # ═══════════════════════════════════════════════════
 # HELPERS
 # ═══════════════════════════════════════════════════
 def generate_key(custom_prefix=None):
     abc = string.ascii_uppercase + string.digits
     if custom_prefix:
-        # Clean string and uppercase it
         clean_prefix = "".join(e for e in custom_prefix if e.isalnum()).upper()
         rand_part = ''.join(secrets.choice(abc) for _ in range(4))
         return f"APEX-{clean_prefix}-{rand_part}"
@@ -197,7 +180,3 @@ def is_expired(lic):
 
 def time_remaining(lic):
     return lic.time_remaining()
-
-def generate_hwid(android_id='', serial='', fingerprint='', cpu_info=''):
-    combined = f"{android_id}|{serial}|{fingerprint}|{cpu_info}"
-    return hashlib.sha256(combined.encode()).hexdigest()
